@@ -1,30 +1,21 @@
 #include "WinAlloc.h"
 
-#include <assert.h>
-
 void* WinAlloc::Reserve(void* base, size_t size) {
-    void* ptr;
-
-    ptr = VirtualAlloc(base, size, MEM_RESERVE, PAGE_READWRITE);
-    assert(ptr);
-
-    return ptr;
+    return VirtualAlloc(base, size, MEM_RESERVE, PAGE_NOACCESS);
 }
 
 void* WinAlloc::CommitRegion(void* ptr, size_t size) {
-    void* out;
-
-    out = VirtualAlloc(ptr, size, MEM_COMMIT, PAGE_READWRITE);
-    assert(out);
-
-    return out;
+    return VirtualAlloc(ptr, size, MEM_COMMIT, PAGE_READWRITE);
 }
 
 void* WinAlloc::Allocate(size_t size) {
-    void* out;
+    return VirtualAlloc(nullptr, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+}
 
-    out = VirtualAlloc(nullptr, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-    assert(out);
+bool WinAlloc::DecommitRegion(void* ptr, size_t size) {
+    return VirtualFree(ptr, size, MEM_DECOMMIT) != 0;
+}
 
-    return out;
+void WinAlloc::Release(void* ptr, size_t) {
+    if (ptr) VirtualFree(ptr, 0, MEM_RELEASE);
 }

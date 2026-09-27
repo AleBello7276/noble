@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 
 class HostAlloc {
 public:
@@ -12,4 +13,6 @@ public:
 
     /* allocate `size` memory */
     virtual void* Allocate(size_t size) = 0;
+    virtual bool DecommitRegion(void* ptr, size_t size) = 0;
+    virtual void Release(void* ptr, size_t size) = 0;
 };

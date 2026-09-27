@@ -20,8 +20,12 @@ set(Emulator
 )
 
 set(Core 
-    noble/core/platform/WinAlloc.cpp
 )
+if(WIN32)
+    list(APPEND Core noble/core/platform/WinAlloc.cpp)
+else()
+    list(APPEND Core noble/core/platform/PosixAlloc.cpp)
+endif()
 
 set(SRC
     noble/noble.cpp
@@ -31,6 +35,9 @@ set(SRC
     ${Loader}
     ${Emulator}
     ${Core}
+    noble/kernel/Kernel.cpp
+    noble/cpu/Scheduler.cpp
+    noble/cpu/CpuBackend.cpp
 )
 
 set(INCLUDE
@@ -48,7 +55,9 @@ add_executable(noble ${CMAKE_CURRENT_SOURCE_DIR}/${SRC})
 find_program(CARGO_EXECUTABLE cargo REQUIRED)
 set(RUST_FFI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ffi")
 set(RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-target")
-set(RUST_CARGO_HOME "${CMAKE_CURRENT_BINARY_DIR}/cargo-home")
+if(NOT DEFINED RUST_CARGO_HOME)
+    set(RUST_CARGO_HOME "${CMAKE_CURRENT_BINARY_DIR}/cargo-home")
+endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(RUST_PROFILE debug)
@@ -89,4 +98,17 @@ add_dependencies(noble_ffi noble_ffi_build)
 target_link_libraries(noble PRIVATE noble_ffi)
 if(WIN32)
     target_link_libraries(noble PRIVATE ws2_32 ntdll userenv bcrypt)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(noble_core_tests
+        ${CMAKE_SOURCE_DIR}/test/MemoryCpuTest.cpp
+        noble/emulator/Memory.cpp
+        noble/cpu/CpuBackend.cpp
+        noble/cpu/Scheduler.cpp
+        noble/kernel/Kernel.cpp
+        ${Core}
+    )
+    target_include_directories(noble_core_tests PRIVATE ${INCLUDE})
+    add_test(NAME noble_core_tests COMMAND noble_core_tests)
 endif()
