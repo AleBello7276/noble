@@ -53,6 +53,7 @@ void PPCModule::DiscoverInstructions() {
     LOG_INFO("PPCModule::DiscoverInstructions Entry point at 0x{:08X}, first byte: 0x{:02X}", entryPoint,
              test);
 
+    // find .text
     for (const auto& sec : mImage->getSections()) {
         if (sec->getName() != ".text") {
             continue;
@@ -60,12 +61,6 @@ void PPCModule::DiscoverInstructions() {
 
         uint32_t secVirtBase = 0;
         uint32_t secVirtSize = 0;
-
-        // relocation for kernel, i hate this.
-        if (this->m_type == BIN_KERNEL) {
-            secVirtBase = 0x80065c00;  // .text real base
-            secVirtSize = 0x10A400;    // .text real size
-        }
 
         LOG_DEBUG("PBinaryHandle::LoadBinary Found executable section: {}", sec->getName().c_str());
 
@@ -82,7 +77,8 @@ void PPCModule::DiscoverInstructions() {
         while (address <= end) {
             // get and byteswap
             uint32_t data = (uint32_t)*(uint32_t*)(secDataPtr + (address - start));
-            mInstrMap.try_emplace(address, codec::PPCCodec::decode(data));
+            data = _bswap(data);
+            mInstrMap.try_emplace(address, codec::ppc_ins_new(data));
 
             address += 4;
         }

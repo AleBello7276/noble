@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+namespace codec {
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -90,3 +92,5 @@ PpcBranchDest ppc_ins_branch_dest(PpcIns ins, uint32_t address);
 #ifdef __cplusplus
 }
 #endif
+
+}  // namespace codec

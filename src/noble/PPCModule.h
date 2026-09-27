@@ -1,11 +1,10 @@
 #include <memory>
 #include <unordered_map>
 
-#include "Codec/ppc_codec.h"
 #include "Loader/ImageLoader.h"
 #include "Loader/PEImage.h"
 #include "Loader/XEXImage.h"
-
+#include "powerpc-rs.h"
 
 enum BinaryType : uint8_t { BIN_XEX, BIN_PE, BIN_KERNEL, BIN_UNKNOWN };
 
@@ -17,7 +16,7 @@ public:
     std::unique_ptr<XLoader::IImage> mImage;
     BinaryType m_type;
     uint32_t mID;
-    std::unordered_map<uint32_t, codec::DecodedInst> mInstrMap;  // address -> instruction
+    std::unordered_map<uint32_t, codec::PpcIns> mInstrMap;  // address -> instruction
 
     PPCModule(std::string path, bool useCache = false, bool isKernel = false);
 
