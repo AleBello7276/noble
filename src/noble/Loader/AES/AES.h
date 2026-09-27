@@ -51,7 +51,7 @@ void rijndaelDecryptRound(const u32 rk[/*4*(Nr + 1)*/], int Nr, u8 block[16], in
 #endif /* INTERMEDIATE_VALUE_KAT */
 
 #ifdef __cplusplus
-} // extern "C"
+}  // extern "C"
 #endif
 
 #endif /* __RIJNDAEL_ALG_FST_H */

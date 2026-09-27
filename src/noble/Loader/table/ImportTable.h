@@ -5,30 +5,23 @@ using namespace XLoader;
 
 std::vector<Import*> import_table;
 
-static inline void loadImport(XboxLibrary lib, std::string name, uint32_t ordinal, ImportType type)
-{
+static inline void loadImport(XboxLibrary lib, std::string name, uint32_t ordinal, ImportType type) {
     Import* imp = new Import(lib, type, name, ordinal);
     import_table.push_back(imp);
 }
 
 #define LOAD_IMPORT(lib, ord, type, name) loadImport(lib, name, ord, type)
 
-
-static inline Import* findImport_FromLib(std::string libName, uint32_t ordinal)
-{
+static inline Import* findImport_FromLib(std::string libName, uint32_t ordinal) {
     bool libFound = false;
     bool ordFound = false;
 
-    if(strcmp(libName.c_str(), "xboxkrnl.exe") == 0)
-    {
-        for (Import* imp : import_table)
-        {
-            if (imp->library == XboxLibrary::XboxKrnl)
-            {
+    if (strcmp(libName.c_str(), "xboxkrnl.exe") == 0) {
+        for (Import* imp : import_table) {
+            if (imp->library == XboxLibrary::XboxKrnl) {
                 libFound = true;
 
-                if(imp->ordinal == ordinal)
-                {
+                if (imp->ordinal == ordinal) {
                     ordFound = true;
                     return imp;
                 }
@@ -36,16 +29,12 @@ static inline Import* findImport_FromLib(std::string libName, uint32_t ordinal)
         }
     }
 
-    if (strcmp(libName.c_str(), "xam.xex") == 0)
-    {
-        for (Import* imp : import_table)
-        {
-            if (imp->library == XboxLibrary::Xam)
-            {
+    if (strcmp(libName.c_str(), "xam.xex") == 0) {
+        for (Import* imp : import_table) {
+            if (imp->library == XboxLibrary::Xam) {
                 libFound = true;
 
-                if (imp->ordinal == ordinal)
-                {
+                if (imp->ordinal == ordinal) {
                     ordFound = true;
                     return imp;
                 }
@@ -53,25 +42,21 @@ static inline Import* findImport_FromLib(std::string libName, uint32_t ordinal)
         }
     }
 
-    if(!libFound)
-    {
+    if (!libFound) {
         printf("No Lib with name: %s found\n", libName.c_str());
         return nullptr;
     }
 
-    if (!ordFound)
-    {
+    if (!ordFound) {
         printf("No Import in Lib: %s with ordinal i% found\n", libName.c_str(), ordinal);
         return nullptr;
     }
 }
 
-
-static inline void initImportTable()
-{
+static inline void initImportTable() {
     //
     // Xapi
-    // 
+    //
 
     LOAD_IMPORT(XboxLibrary::Xapi, 0x0001, ImportType::Variable, "XapiProcessHeap");
     LOAD_IMPORT(XboxLibrary::Xapi, 0x0002, ImportType::Variable, "_locktable");
@@ -186,11 +171,13 @@ static inline void initImportTable()
     LOAD_IMPORT(XboxLibrary::Xam, 0x0083, ImportType::Function, "NetDll_XnpGetQosLookupList");
     LOAD_IMPORT(XboxLibrary::Xam, 0x0084, ImportType::Function, "NetDll_XnpPersistTitleState");
     LOAD_IMPORT(XboxLibrary::Xam, 0x0085, ImportType::Function, "NetDll_XnpReplaceKeyForCallerType");
-    LOAD_IMPORT(XboxLibrary::Xam, 0x0086, ImportType::Function, "NetDll_XnpEthernetInterceptSetExtendedReceiveCallback");
+    LOAD_IMPORT(XboxLibrary::Xam, 0x0086, ImportType::Function,
+                "NetDll_XnpEthernetInterceptSetExtendedReceiveCallback");
     LOAD_IMPORT(XboxLibrary::Xam, 0x0087, ImportType::Function, "NetDll_XnpQosHistoryLoad");
     LOAD_IMPORT(XboxLibrary::Xam, 0x0088, ImportType::Function, "NetDll_XnpQosHistorySaveMeasurements");
     LOAD_IMPORT(XboxLibrary::Xam, 0x0089, ImportType::Function, "NetDll_XnpQosHistoryGetEntries");
-    LOAD_IMPORT(XboxLibrary::Xam, 0x008A, ImportType::Function, "NetDll_XnpQosHistoryGetAggregateMeasurement");
+    LOAD_IMPORT(XboxLibrary::Xam, 0x008A, ImportType::Function,
+                "NetDll_XnpQosHistoryGetAggregateMeasurement");
     LOAD_IMPORT(XboxLibrary::Xam, 0x008B, ImportType::Function, "NetDll_XnpToolSetCallbacks");
     LOAD_IMPORT(XboxLibrary::Xam, 0x008C, ImportType::Function, "NetDll_XnpToolIpProxyInject");
     LOAD_IMPORT(XboxLibrary::Xam, 0x008D, ImportType::Function, "NetDll_XnpUpdateConfigParams");
@@ -1069,7 +1056,8 @@ static inline void initImportTable()
     LOAD_IMPORT(XboxLibrary::Xam, 0x05F4, ImportType::Function, "XamAvatarWearNow");
     LOAD_IMPORT(XboxLibrary::Xam, 0x05F5, ImportType::Function, "XamAvatarGetAssetBinary");
     LOAD_IMPORT(XboxLibrary::Xam, 0x05F6, ImportType::Function, "XamAvatarReinstallAwardedAsset");
-    LOAD_IMPORT(XboxLibrary::Xam, 0x05F7, ImportType::Function, "XamAvatarGetInstalledAssetPackageDescription");
+    LOAD_IMPORT(XboxLibrary::Xam, 0x05F7, ImportType::Function,
+                "XamAvatarGetInstalledAssetPackageDescription");
     LOAD_IMPORT(XboxLibrary::Xam, 0x05F8, ImportType::Function, "XamAvatarSetMocks");
     LOAD_IMPORT(XboxLibrary::Xam, 0x060E, ImportType::Function, "XamContentMountInstalledGame");
     LOAD_IMPORT(XboxLibrary::Xam, 0x060F, ImportType::Function, "XamContentIsGameInstalledToHDD");
@@ -1077,14 +1065,17 @@ static inline void initImportTable()
     LOAD_IMPORT(XboxLibrary::Xam, 0x0611, ImportType::Function, "XamContentGetDeviceVolumePath");
     LOAD_IMPORT(XboxLibrary::Xam, 0x0612, ImportType::Function, "XamContentDeviceCheckUpdates");
     LOAD_IMPORT(XboxLibrary::Xam, 0x0613, ImportType::Function, "XamContentGetHeaderInternal");
-    LOAD_IMPORT(XboxLibrary::Xam, 0x0640, ImportType::Function, "XamPackageManagerFindPackageContainingIndexedXEX");
+    LOAD_IMPORT(XboxLibrary::Xam, 0x0640, ImportType::Function,
+                "XamPackageManagerFindPackageContainingIndexedXEX");
     LOAD_IMPORT(XboxLibrary::Xam, 0x0641, ImportType::Function, "XamPackageManagerReinitialize");
-    LOAD_IMPORT(XboxLibrary::Xam, 0x0642, ImportType::Function, "XamPackageManagerGetAuthoritativeManifestVersion");
+    LOAD_IMPORT(XboxLibrary::Xam, 0x0642, ImportType::Function,
+                "XamPackageManagerGetAuthoritativeManifestVersion");
     LOAD_IMPORT(XboxLibrary::Xam, 0x0643, ImportType::Function, "XamGetCurrentSystemOnlineManifestRevision");
     LOAD_IMPORT(XboxLibrary::Xam, 0x0644, ImportType::Function, "XamPackageManagerDeleteExtendedPartition");
     LOAD_IMPORT(XboxLibrary::Xam, 0x0645, ImportType::Function, "XamPackageManagerHasExtendedPartition");
     LOAD_IMPORT(XboxLibrary::Xam, 0x0646, ImportType::Function, "XamPackageManagerGetExperienceMode");
-    LOAD_IMPORT(XboxLibrary::Xam, 0x0647, ImportType::Function, "XamPackageManagerGetFeatureRequiresUpdateStrings");
+    LOAD_IMPORT(XboxLibrary::Xam, 0x0647, ImportType::Function,
+                "XamPackageManagerGetFeatureRequiresUpdateStrings");
     LOAD_IMPORT(XboxLibrary::Xam, 0x0648, ImportType::Function, "XamPackageManagerGetFileSize");
     LOAD_IMPORT(XboxLibrary::Xam, 0x0649, ImportType::Function, "XampDemandUpdateGetAttributes");
     LOAD_IMPORT(XboxLibrary::Xam, 0x064A, ImportType::Function, "XampDemandUpdateGetExtendedAttributes");
@@ -1258,7 +1249,8 @@ static inline void initImportTable()
     LOAD_IMPORT(XboxLibrary::Xam, 0x088A, ImportType::Function, "XamGetHUDElementByAutoId");
     LOAD_IMPORT(XboxLibrary::Xam, 0x088B, ImportType::Function, "XuiElementGetScreenPositionCenter");
     LOAD_IMPORT(XboxLibrary::Xam, 0x088C, ImportType::Function, "XamNuiCameraElevationReverseAutoTilt");
-    LOAD_IMPORT(XboxLibrary::Xam, 0x088D, ImportType::Function, "ControlPackSimpleCursorGetRayFromScreenPosition");
+    LOAD_IMPORT(XboxLibrary::Xam, 0x088D, ImportType::Function,
+                "ControlPackSimpleCursorGetRayFromScreenPosition");
     LOAD_IMPORT(XboxLibrary::Xam, 0x088E, ImportType::Function, "ControlPackSideNavControlGetNuiHandle");
     LOAD_IMPORT(XboxLibrary::Xam, 0x088F, ImportType::Function, "XamFindHUDElementByXuiId");
     LOAD_IMPORT(XboxLibrary::Xam, 0x0890, ImportType::Function, "XamNuiIsDeviceReady");
@@ -1298,8 +1290,10 @@ static inline void initImportTable()
     LOAD_IMPORT(XboxLibrary::Xam, 0x08B3, ImportType::Function, "D3DDevice_DrawVerticesUP");
     LOAD_IMPORT(XboxLibrary::Xam, 0x08B4, ImportType::Function, "D3DDevice_DrawIndexedVertices");
     LOAD_IMPORT(XboxLibrary::Xam, 0x08B5, ImportType::Function, "D3DDevice_DrawIndexedVerticesUP");
-    LOAD_IMPORT(XboxLibrary::Xam, 0x08B6, ImportType::Function, "D3DDevice_SetVertexShaderConstantF_ParameterCheck");
-    LOAD_IMPORT(XboxLibrary::Xam, 0x08B7, ImportType::Function, "D3DDevice_SetPixelShaderConstantF_ParameterCheck");
+    LOAD_IMPORT(XboxLibrary::Xam, 0x08B6, ImportType::Function,
+                "D3DDevice_SetVertexShaderConstantF_ParameterCheck");
+    LOAD_IMPORT(XboxLibrary::Xam, 0x08B7, ImportType::Function,
+                "D3DDevice_SetPixelShaderConstantF_ParameterCheck");
     LOAD_IMPORT(XboxLibrary::Xam, 0x08B8, ImportType::Function, "D3DDevice_SetSamplerState_ParameterCheck");
     LOAD_IMPORT(XboxLibrary::Xam, 0x08B9, ImportType::Function, "D3DDevice_SetRenderState_ParameterCheck");
     LOAD_IMPORT(XboxLibrary::Xam, 0x08BA, ImportType::Function, "D3DDevice_GetRenderState_ParameterCheck");
@@ -1368,16 +1362,19 @@ static inline void initImportTable()
     LOAD_IMPORT(XboxLibrary::Xam, 0x09D2, ImportType::Function, "XamBackgroundDownloadItemSetHistoryStatus");
     LOAD_IMPORT(XboxLibrary::Xam, 0x09D3, ImportType::Function, "XamBackgroundDownloadItemGetStatusAsync");
     LOAD_IMPORT(XboxLibrary::Xam, 0x09D4, ImportType::Function, "XamBackgroundDownloadItemGetStatusEx");
-    LOAD_IMPORT(XboxLibrary::Xam, 0x09D5, ImportType::Function, "XamBackgroundDownloadItemGetHistoryStatusEx");
+    LOAD_IMPORT(XboxLibrary::Xam, 0x09D5, ImportType::Function,
+                "XamBackgroundDownloadItemGetHistoryStatusEx");
     LOAD_IMPORT(XboxLibrary::Xam, 0x09D6, ImportType::Function, "XamBackgroundDownloadBindItems");
     LOAD_IMPORT(XboxLibrary::Xam, 0x09D7, ImportType::Function, "XamBackgroundDownloadSetPollingActive");
     LOAD_IMPORT(XboxLibrary::Xam, 0x09D8, ImportType::Function, "XamBackgroundDownloadGetPollingActive");
     LOAD_IMPORT(XboxLibrary::Xam, 0x09D9, ImportType::Function, "XamBackgroundDownloadGetMode");
-    LOAD_IMPORT(XboxLibrary::Xam, 0x09DA, ImportType::Function, "XamBackgroundDownloadGetUnexpectedChangeCount");
+    LOAD_IMPORT(XboxLibrary::Xam, 0x09DA, ImportType::Function,
+                "XamBackgroundDownloadGetUnexpectedChangeCount");
     LOAD_IMPORT(XboxLibrary::Xam, 0x09DB, ImportType::Function, "XamBackgroundDownloadIsItemForThisConsole");
     LOAD_IMPORT(XboxLibrary::Xam, 0x09DC, ImportType::Function, "XamBackgroundDownloadSelectDevice");
     LOAD_IMPORT(XboxLibrary::Xam, 0x09DD, ImportType::Function, "XamBackgroundDownloadItemModify");
-    LOAD_IMPORT(XboxLibrary::Xam, 0x09DE, ImportType::Function, "XamBackgroundDownloadCacheLegacyMappingInfo");
+    LOAD_IMPORT(XboxLibrary::Xam, 0x09DE, ImportType::Function,
+                "XamBackgroundDownloadCacheLegacyMappingInfo");
     LOAD_IMPORT(XboxLibrary::Xam, 0x09DF, ImportType::Function, "XamBackgroundDownloadGetLegacyMappingInfo");
     LOAD_IMPORT(XboxLibrary::Xam, 0x09E0, ImportType::Function, "XamBackgroundDownloadGetLegacyId");
     LOAD_IMPORT(XboxLibrary::Xam, 0x09E1, ImportType::Function, "XamBackgroundDownloadDoFail");
@@ -1473,10 +1470,10 @@ static inline void initImportTable()
     LOAD_IMPORT(XboxLibrary::Xam, 0x0B33, ImportType::Function, "XampSetSamplingRandomValue");
     LOAD_IMPORT(XboxLibrary::Xam, 0x0B34, ImportType::Function, "XampWebInstrumentationSetProfileCounts");
     LOAD_IMPORT(XboxLibrary::Xam, 0x0B35, ImportType::Function, "XamWebInstrumentationGetURLEx");
-    LOAD_IMPORT(XboxLibrary::Xam, 0x0B36, ImportType::Function, "XampSetOmnitureCallbackImportType::Function");
+    LOAD_IMPORT(XboxLibrary::Xam, 0x0B36, ImportType::Function,
+                "XampSetOmnitureCallbackImportType::Function");
     LOAD_IMPORT(XboxLibrary::Xam, 0x0B37, ImportType::Function, "XamShowQuickChatUIp");
     LOAD_IMPORT(XboxLibrary::Xam, 0x0B4A, ImportType::Function, "XamVerifyXSignerSignature");
-
 
     //
     // XboxKrnl
@@ -1784,7 +1781,8 @@ static inline void initImportTable()
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x012C, ImportType::Function, "RtlInitAnsiString");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x012D, ImportType::Function, "RtlInitUnicodeString");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x012E, ImportType::Function, "RtlInitializeCriticalSection");
-    LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x012F, ImportType::Function, "RtlInitializeCriticalSectionAndSpinCount");
+    LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x012F, ImportType::Function,
+                "RtlInitializeCriticalSectionAndSpinCount");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x0130, ImportType::Function, "RtlLeaveCriticalSection");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x0131, ImportType::Function, "RtlLookupImportType::FunctionEntry");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x0132, ImportType::Function, "RtlLowerChar");
@@ -1954,7 +1952,8 @@ static inline void initImportTable()
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x01D6, ImportType::Function, "VdSetHDCPOption");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x01D7, ImportType::Function, "VdSetMacrovisionOption");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x01D8, ImportType::Function, "VdSetSystemCommandBuffer");
-    LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x01D9, ImportType::Function, "VdSetSystemCommandBufferGpuIdentifierAddress");
+    LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x01D9, ImportType::Function,
+                "VdSetSystemCommandBufferGpuIdentifierAddress");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x01DA, ImportType::Function, "VdSetWSSData");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x01DB, ImportType::Function, "VdSetWSSOption");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x01DC, ImportType::Function, "VdShutdownEngines");
@@ -1984,7 +1983,8 @@ static inline void initImportTable()
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x01F4, ImportType::Function, "XAudioUnregisterRenderDriverClient");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x01F5, ImportType::Function, "XAudioSubmitRenderDriverFrame");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x01F6, ImportType::Function, "XAudioRenderDriverLock");
-    LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x01F7, ImportType::Function, "XAudioGetVoiceCategoryVolumeChangeMask");
+    LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x01F7, ImportType::Function,
+                "XAudioGetVoiceCategoryVolumeChangeMask");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x01F8, ImportType::Function, "XAudioGetVoiceCategoryVolume");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x01F9, ImportType::Function, "XAudioSetVoiceCategoryVolume");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x01FA, ImportType::Function, "XAudioBeginDigitalBypassMode");
@@ -2158,12 +2158,14 @@ static inline void initImportTable()
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x02A2, ImportType::Function, "XeKeysGetUpdateSequence");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x02A3, ImportType::Function, "XeKeysDvdAuthExActivate");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x02A4, ImportType::Function, "KeGetImagePageTableEntry");
-    LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x02A5, ImportType::Function, "HalRegisterBackgroundModeTransitionCallback");
+    LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x02A5, ImportType::Function,
+                "HalRegisterBackgroundModeTransitionCallback");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x02A6, ImportType::Function, "AniStartBootAnimation");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x02A7, ImportType::Function, "HalClampUnclampOutputDACs");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x02A8, ImportType::Function, "HalPowerDownToBackgroundMode");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x02A9, ImportType::Function, "HalNotifyAddRemoveBackgroundTask");
-    LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x02AA, ImportType::Function, "HalCallBackgroundModeNotificationRoutines");
+    LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x02AA, ImportType::Function,
+                "HalCallBackgroundModeNotificationRoutines");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x02AB, ImportType::Variable, "HalFsbResetCount");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x02AC, ImportType::Function, "HalGetMemoryInformation");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x02AD, ImportType::Function, "XInputdGetLastTextInputTime");
@@ -2174,7 +2176,8 @@ static inline void initImportTable()
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x02B2, ImportType::Function, "XeKeysGetMediaID");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x02B3, ImportType::Function, "XeKeysLoadKeyVault");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x02B4, ImportType::Function, "KeGetVidInfo");
-    LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x02B5, ImportType::Function, "HalNotifyBackgroundModeTransitionComplete");
+    LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x02B5, ImportType::Function,
+                "HalNotifyBackgroundModeTransitionComplete");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x02B6, ImportType::Function, "IoAcquireCancelSpinLock");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x02B7, ImportType::Function, "IoReleaseCancelSpinLock");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x02B8, ImportType::Function, "NtCancelIoFile");
@@ -2341,8 +2344,6 @@ static inline void initImportTable()
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x0359, ImportType::Function, "DevAuthShouldAlwaysEnforce");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x035A, ImportType::Function, "XAudioGetUnderrunCount");
     LOAD_IMPORT(XboxLibrary::XboxKrnl, 0x035C, ImportType::Function, "XVoicedIsActiveProcess");
-
-
 
     // xbmd
 

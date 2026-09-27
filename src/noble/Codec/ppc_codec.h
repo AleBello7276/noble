@@ -1,3 +1,7 @@
+/*
+    Experimental / deprecated in favor of powerpc-rs
+*/
+
 #pragma once
 #include <cstdint>
 #include <string>
