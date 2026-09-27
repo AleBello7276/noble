@@ -52,6 +52,7 @@ public:
 
     uint32_t suspend_count = 0;
     uint32_t exit_code = 0;
+    bool faulted = false;
     std::atomic_bool mTerminateRequested = false;
 
 private:

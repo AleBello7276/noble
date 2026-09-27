@@ -23,7 +23,8 @@ public:
     static constexpr size_t kProcessorCount = 6;
     static constexpr ThreadAffinity kAllProcessorsMask = 0x3F;
 
-    Scheduler();
+    explicit Scheduler(Memory& memory);
+    ~Scheduler();
 
     bool Initialise();
 
@@ -34,6 +35,7 @@ public:
     void MakeRunnable(KThread* thread);
 
     KThread* CurrentThread() const;
+    void WaitForThread(KThread* thread);
     void TerminateThread(KThread* thread, uint32_t exitCode);
 
 private:
@@ -51,9 +53,11 @@ private:
     std::deque<KThread*> ready_queue_;
 
     std::mutex mutex_;
+    std::mutex lifecycle_mutex_;
     std::condition_variable_any cv_;
 
     bool started_ = false;
 
     uint64_t quantum_ = 50'000;
+    CpuBackend cpu_;
 };

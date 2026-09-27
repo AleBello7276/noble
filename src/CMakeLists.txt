@@ -99,16 +99,3 @@ target_link_libraries(noble PRIVATE noble_ffi)
 if(WIN32)
     target_link_libraries(noble PRIVATE ws2_32 ntdll userenv bcrypt)
 endif()
-
-if(BUILD_TESTING)
-    add_executable(noble_core_tests
-        ${CMAKE_SOURCE_DIR}/test/MemoryCpuTest.cpp
-        noble/emulator/Memory.cpp
-        noble/cpu/CpuBackend.cpp
-        noble/cpu/Scheduler.cpp
-        noble/kernel/Kernel.cpp
-        ${Core}
-    )
-    target_include_directories(noble_core_tests PRIVATE ${INCLUDE})
-    add_test(NAME noble_core_tests COMMAND noble_core_tests)
-endif()

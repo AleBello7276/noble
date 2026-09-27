@@ -1,16 +1,27 @@
+#include "Logger.h"
 #include "Scheduler.h"
 
+#include <algorithm>
 #include <assert.h>
 
 thread_local HardwareThread* gCurrentProcessor = nullptr;
 
-Scheduler::Scheduler() {
+Scheduler::Scheduler(Memory& memory) : cpu_(memory) {
     for (uint32_t i = 0; i < kProcessorCount; ++i) {
         processors_[i].id = i;
     }
 }
 
+Scheduler::~Scheduler() {
+    Stop();
+}
+
+bool Scheduler::Initialise() {
+    return true;
+}
+
 void Scheduler::Start() {
+    std::scoped_lock lifecycle_lock(lifecycle_mutex_);
     {
         std::scoped_lock lock(mutex_);
 
@@ -26,6 +37,15 @@ void Scheduler::Start() {
 }
 
 void Scheduler::Stop() {
+    std::scoped_lock lifecycle_lock(lifecycle_mutex_);
+    {
+        std::scoped_lock lock(mutex_);
+        if (!started_) {
+            ready_queue_.clear();
+            return;
+        }
+        started_ = false;
+    }
     // request all workers a stop
     for (auto& worker : workers_)
         worker.request_stop();
@@ -39,7 +59,8 @@ void Scheduler::Stop() {
             worker.join();
     }
 
-    started_ = false;
+    std::scoped_lock lock(mutex_);
+    ready_queue_.clear();
 }
 
 bool Scheduler::HasRunnableThreadLocked(HWT_ID processor_id) const {
@@ -50,7 +71,7 @@ bool Scheduler::HasRunnableThreadLocked(HWT_ID processor_id) const {
         check the queue for a valid guest thread to execute
     */
     for (auto thread : ready_queue_) {
-        if (thread->mAffinityMask & processor_bit)
+        if (thread->mState == ThreadState::Ready && (thread->mAffinityMask & processor_bit))
             return true;
     }
 
@@ -58,11 +79,17 @@ bool Scheduler::HasRunnableThreadLocked(HWT_ID processor_id) const {
 }
 
 void Scheduler::MakeRunnable(KThread* thread) {
+    if (!thread)
+        return;
+
     // add thread to queue
     {
         std::scoped_lock lock(mutex_);
 
-        assert(thread->mState != ThreadState::Running);
+        if (thread->mState == ThreadState::Ready || thread->mState == ThreadState::Running
+            || thread->mState == ThreadState::Terminated || thread->mState == ThreadState::Suspended
+            || thread->mAffinityMask == 0)
+            return;
 
         thread->mState = ThreadState::Ready;
         ready_queue_.push_back(thread);
@@ -82,7 +109,7 @@ KThread* Scheduler::PickNextThreadLocked(HWT_ID processor_id) {
     for (auto it = ready_queue_.begin(); it != ready_queue_.end(); ++it) {
         KThread* thread = *it;
 
-        if (!(thread->mAffinityMask & processor_bit))
+        if (thread->mState != ThreadState::Ready || !(thread->mAffinityMask & processor_bit))
             continue;
 
         ready_queue_.erase(it);
@@ -104,10 +131,7 @@ void Scheduler::WorkerMain(HWT_ID processor_id, std::stop_token stop_token) {
             std::unique_lock lock(mutex_);
 
             // wait until valid guest thread availabe
-            cv_.wait(lock, stop_token, [&] {
-                ;
-                return HasRunnableThreadLocked(processor_id);
-            });
+            cv_.wait(lock, stop_token, [&] { return HasRunnableThreadLocked(processor_id); });
 
             if (stop_token.stop_requested())
                 break;
@@ -125,7 +149,8 @@ void Scheduler::WorkerMain(HWT_ID processor_id, std::stop_token stop_token) {
             thread->mCurrentProcessor = processor_id;
         }
 
-        ExecutionResult result = cpu_.Execute(thread->context, ExecutionBudget{.instructions = quantum_});
+        ExecutionResult result = cpu_.Execute(thread->mContext, ExecutionBudget{quantum_},
+                                              thread->mTerminateRequested, stop_token);
 
         HandleExecutionResult(processor_id, thread, result);
     }
@@ -133,11 +158,53 @@ void Scheduler::WorkerMain(HWT_ID processor_id, std::stop_token stop_token) {
     gCurrentProcessor = nullptr;
 }
 
+void Scheduler::HandleExecutionResult(HWT_ID processor_id, KThread* thread, ExecutionResult result) {
+    if (result.reason == ExecutionReason::Fault)
+        LOG_ERROR("Guest thread {} faulted at 0x{:08X}", thread->id(), result.fault_address);
+    {
+        std::scoped_lock lock(mutex_);
+
+        processors_[processor_id].current_thread = nullptr;
+        thread->mCurrentProcessor = kInvalidProcessor;
+
+        const bool termination_requested = thread->mTerminateRequested.load(std::memory_order_acquire);
+        if (termination_requested || result.reason == ExecutionReason::Exited
+            || result.reason == ExecutionReason::Fault) {
+            thread->mState = ThreadState::Terminated;
+
+            if (!termination_requested && result.reason == ExecutionReason::Fault) {
+                thread->faulted = true;
+                thread->exit_code = result.fault_address;
+            }
+
+        } else if (result.reason == ExecutionReason::Waiting) {
+            thread->mState = ThreadState::Waiting;
+
+        } else {
+            thread->mState = ThreadState::Ready;
+            ready_queue_.push_back(thread);
+        }
+    }
+
+    // notify all
+    cv_.notify_all();
+}
+
 KThread* Scheduler::CurrentThread() const {
     if (!gCurrentProcessor)
         return nullptr;
 
     return gCurrentProcessor->current_thread;
+}
+
+void Scheduler::WaitForThread(KThread* thread) {
+    if (!thread)
+        return;
+    {
+        std::unique_lock lock(mutex_);
+
+        cv_.wait(lock, [&] { return thread->mState == ThreadState::Terminated || !started_; });
+    }
 }
 
 void Scheduler::TerminateThread(KThread* thread, uint32_t exitCode) {
@@ -156,13 +223,11 @@ void Scheduler::TerminateThread(KThread* thread, uint32_t exitCode) {
 
         /* if in queue remove it now */
         if (thread->mState == ThreadState::Ready) {
-            auto it = std::find(ready_queue_.begin(), ready_queue_.end(), thread);
-
-            if (it != ready_queue_.end())
-                ready_queue_.erase(it);
+            std::erase(ready_queue_, thread);
 
             thread->mState = ThreadState::Terminated;
             thread->mCurrentProcessor = kInvalidProcessor;
+            cv_.notify_all();
             return;
         }
 
@@ -176,6 +241,7 @@ void Scheduler::TerminateThread(KThread* thread, uint32_t exitCode) {
 
             thread->mCurrentProcessor = kInvalidProcessor;
 
+            cv_.notify_all();
             return;
         }
 

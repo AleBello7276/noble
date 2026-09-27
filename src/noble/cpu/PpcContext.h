@@ -77,26 +77,12 @@ struct PPCContext {
     static constexpr size_t FPR_COUNT = 32;
     static constexpr size_t VR_COUNT = 128;
 
-    GPR GPRs[GPR_COUNT];
-    FPR FPRs[FPR_COUNT];
-    Vector128 VRs[VR_COUNT];
-    CR ControlRegister;
-    uint32_t CIA;
+    GPR GPRs[GPR_COUNT]{};
+    FPR FPRs[FPR_COUNT]{};
+    Vector128 VRs[VR_COUNT]{};
+    CR ControlRegister{};
+    uint32_t CIA = 0;
+    uint32_t LR = 0;
 
-    PPCContext() {
-        for (GPR gpr : GPRs) {
-            gpr.u64 = 0;
-        }
-
-        for (FPR fpr : FPRs) {
-            fpr.f64 = 0;
-        }
-
-        for (Vector128 vr : VRs) {
-            vr.qword.fill(0);
-        }
-
-        ControlRegister.CRFull = 0;
-    }
     /* continue... */
 };

@@ -34,7 +34,7 @@ public:
     bool Initialize();
     void Shutdown();
 
-    KProcess* CreateProcess(const ProcessCreateInfo& info);
+    KProcess* CreateGuestProcess(const ProcessCreateInfo& info);
 
     KThread* CreateThread(KProcess* process, const ThreadCreateInfo& info);
     void StartThread(KThread* thread);

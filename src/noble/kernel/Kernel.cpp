@@ -1,9 +1,9 @@
-#include "kernel.h"
+#include "Kernel.h"
 
 #include "Logger.h"
 #include "cpu/Scheduler.h"
 #include "emulator/Memory.h"
-#include <assert.h>
+#include <algorithm>
 
 Kernel::Kernel(Memory& memory, Scheduler& scheduler) : memory_(memory), scheduler_(scheduler) {}
 
@@ -15,10 +15,15 @@ bool Kernel::Initialize() {
 }
 
 void Kernel::Shutdown() {
+    for (auto& process : processes_)
+        for (auto& thread : process->threads_)
+            if (thread->mStackLimit)
+                memory_.FreeVirtual(thread->mStackLimit);
+
     processes_.clear();
 }
 
-KProcess* Kernel::CreateProcess(const ProcessCreateInfo& info) {
+KProcess* Kernel::CreateGuestProcess(const ProcessCreateInfo& info) {
     auto process = std::make_unique<KProcess>(next_process_id_++);
 
     process->mImageBase_ = info.image_base;
@@ -32,19 +37,19 @@ KProcess* Kernel::CreateProcess(const ProcessCreateInfo& info) {
 }
 
 bool Kernel::AllocateThreadStack(KThread& thread, uint32_t size) {
-    assert(false);
-    // size = AlignUp(size, 0x1000);
-    //// GuestAddress base = memory_.AllocateVirtual(size);
-    //
-    // if (!base) {
-    //    LOG_FATAL("Kernel::AllocateThreadStack -> Unable to allocate Thread stack\n");
-    //    assert(base);
-    //    return false;
-    //}
-    //
-    // thread.mStackLimit = base;
-    // thread.mStackBase = base + size;
-    //
+    if (size == 0 || (uint64_t)size + 4095 > UINT32_MAX)
+        return false;
+
+    size = AlignUp(size, 0x1000);
+    const uint32_t base = memory_.AllocateVirtual(size);
+
+    if (!base) {
+        LOG_ERROR("Unable to allocate guest thread stack");
+        return false;
+    }
+
+    thread.mStackLimit = base;
+    thread.mStackBase = base + size;
     return true;
 }
 
@@ -54,7 +59,8 @@ void Kernel::InitializeThreadContext(KThread& thread, const ThreadCreateInfo& in
     thread.mContext.CIA = info.entry_point;
 
     /* PPC stack pointer = r1 */
-    thread.mContext.GPRs[1] = (GPR)thread.mStackBase;
+    thread.mContext.GPRs[1].u64 = thread.mStackBase;
+    // thread.mContext.GPRs[3].u64 = info.parameter;
 
     // TODO: arguments loading
 
@@ -84,14 +90,8 @@ KThread* Kernel::CreateThread(KProcess* process, const ThreadCreateInfo& info) {
 }
 
 void Kernel::StartThread(KThread* thread) {
-    assert(thread);
-
     if (!thread)
         return;
-
-    if (thread->mState == ThreadState::Suspended) {
-        return;
-    }
 
     // add to queue
     scheduler_.MakeRunnable(thread);
@@ -128,9 +128,7 @@ void Kernel::ExitThread(KThread* thread, uint32_t exit_code) {
     if (!thread)
         return;
 
-    thread->exit_code = exit_code;
-
-    thread->mState = ThreadState::Terminated;
+    scheduler_.TerminateThread(thread, exit_code);
 }
 
 void Kernel::ExitProcess(KProcess* process, uint32_t exit_code) {
@@ -142,8 +140,6 @@ void Kernel::ExitProcess(KProcess* process, uint32_t exit_code) {
     process->exit_code_ = exit_code;
 
     for (auto& thread : process->threads_) {
-        if (thread->mState != ThreadState::Terminated) {
-            scheduler_.TerminateThread(thread.get(), exit_code);
-        }
+        scheduler_.TerminateThread(thread.get(), exit_code);
     }
 }

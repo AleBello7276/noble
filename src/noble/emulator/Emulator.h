@@ -9,13 +9,14 @@
 class Emulator {
 public:
     Emulator();
+    ~Emulator();
 
     /* initliase the Emulator subsytems */
     bool Initialise();
 
     bool LoadTitle(std::string path);
 
-    void Run();
+    bool Run();
 
     void Shutdown();
 
@@ -25,4 +26,7 @@ private:
     Kernel mKernel_;
 
     PPCModule mStartModule;
+    KProcess* mTitleProcess_ = nullptr;
+    KThread* mInitialThread_ = nullptr;
+    uint32_t mImageAddress_ = 0;
 };
