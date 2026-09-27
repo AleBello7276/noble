@@ -688,8 +688,8 @@ bool XEXImage::processImports() {
 
         m_imports.push_back(std::move(import));
 
-        printf("  Import: %s (type=%s, lib=%s, ordinal=%u)\n", importName,
-               (impType == ImportType::Function) ? "func" : "var", libName.c_str(), ordinal);
+        // printf("  Import: %s (type=%s, lib=%s, ordinal=%u)\n", importName,
+        //        (impType == ImportType::Function) ? "func" : "var", libName.c_str(), ordinal);
     }
 
     printf("  Processed %zu imports\n", m_imports.size());

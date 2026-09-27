@@ -13,14 +13,24 @@ set(Loader
     noble/Loader/AES/AES.cpp
 )
 
+set(Emulator 
+    noble/emulator/Emulator.cpp
+    noble/emulator/Memory.cpp
+    noble/emulator/PPCModule.cpp
+)
+
+set(Core 
+    noble/core/platform/WinAlloc.cpp
+)
 
 set(SRC
     noble/noble.cpp
     noble/Logger.h 
-	noble/PPCModule.cpp
-	noble/PPCModule.h
+	
 
     ${Loader}
+    ${Emulator}
+    ${Core}
 )
 
 set(INCLUDE

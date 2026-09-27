@@ -10,16 +10,7 @@ PPCModule::PPCModule(std::string path, bool useCache, bool isKernel) {
     if (useCache == false) {
         // load and decode instructions
         LoadBinary();
-
-        // recompile into dym lib
-        // RecompileBinary();
     }
-
-    LOG_ERROR("TranslateBinary {}", "Caching NYI");
-
-    // the cache is very simple in practice, it's just a way to store already recompiled modules,
-    // it doesn't matter where they are located
-    // so all cached binaries will be located in ./cache/<hash>
 }
 
 void PPCModule::LoadBinary() {
@@ -39,19 +30,13 @@ void PPCModule::LoadBinary() {
         }
     }
 
-    DiscoverInstructions();
+    DecodeInstructions();
 }
 
-void PPCModule::RecompileBinary() {}
-
-void PPCModule::DiscoverInstructions() {
+void PPCModule::DecodeInstructions() {
     const uint32_t entryPoint = mImage->getEntryPoint();
     const uint32_t imageBase = mImage->getBaseAddress();
     const uint8_t* mData = mImage->getMemoryData();
-
-    uint32_t test = mData[entryPoint - imageBase];
-    LOG_INFO("PPCModule::DiscoverInstructions Entry point at 0x{:08X}, first byte: 0x{:02X}", entryPoint,
-             test);
 
     // find .text
     for (const auto& sec : mImage->getSections()) {

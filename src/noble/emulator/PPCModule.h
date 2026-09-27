@@ -18,18 +18,12 @@ public:
     uint32_t mID;
     std::unordered_map<uint32_t, codec::PpcIns> mInstrMap;  // address -> instruction
 
+    PPCModule();
     PPCModule(std::string path, bool useCache = false, bool isKernel = false);
 
 private:
     // Load an internal Image of the XEX or PE file for the emulator to use
     void LoadBinary();
 
-    // Recompile the code into LLVM IR
-    void RecompileBinary();
-
-    // Run several simple passes of analysis over the Module code
-    // starting from the entrypoint and spreading using known branches
-    // it naturally discovers all instructions in the code without relying on .text section which might be
-    // misleading (xboxkrnl)
-    void DiscoverInstructions();
+    void DecodeInstructions();
 };

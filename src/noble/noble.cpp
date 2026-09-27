@@ -1,13 +1,26 @@
-#include "Loader/ImageLoader.h"
-#include "Loader/PEImage.h"
-#include "Loader/XEXImage.h"
 #include "Logger.h"
-
-#include "PPCModule.h"
+#include "emulator/Emulator.h"
 
 int main(int argc, char* argv[]) {
-    PPCModule dolphin = PPCModule("F:/Stuff/noble/test/dolphin/dolphin.xex", false, false);
+    Emulator emu = Emulator();
 
+    if (emu.Initialise() == false) {
+        LOG_FATAL("Failed to Initialise emulator subsystems\n");
+        return 1;
+    }
+
+    if (emu.LoadTitle("F:/Stuff/noble/test/dolphin/dolphin.xex") == false) {
+        LOG_FATAL("Failed to load the Title\n");
+        return 1;
+    }
+
+    emu.Run();
+
+    emu.Shutdown();
+
+    //
+    //
+    printf("\n\n\n");
     // Splash texts
     printf("Hello, World!\n");
     printf("Say hi to the new galaxy note\n");
