@@ -4,6 +4,11 @@
 #include <vector>
 
 namespace XLoader {
+
+// util
+void swap16(uint16_t* val);
+void swap32(uint32_t* val);
+
 // XEX2 specific enums and structures
 enum class XEXCompressionType : uint16_t { None = 0, Basic = 1, Normal = 2, Delta = 3 };
 
@@ -35,8 +40,18 @@ struct XEXHeader {
 };
 
 struct XEXOptionalHeaderEntry {
-    uint32_t key;
-    uint32_t offset;
+    uint32_t mKey;
+    uint32_t mOffset;
+    uint32_t mlength;
+    uint32_t mValue;
+
+    XEXOptionalHeaderEntry(const uint8_t* data, size_t offset) {
+        memcpy(this, data + offset, 8);
+        swap32(&mKey);
+        swap32(&mOffset);
+        mlength = 0;
+        mValue = 0;
+    }
 };
 
 struct XEXLoaderInfo {
@@ -78,8 +93,14 @@ struct XEXExecutionInfo {
 };
 
 struct XEXFileCompressionInfo {
-    uint16_t compressionType;
     uint16_t encryptionType;
+    uint16_t compressionType;
+
+    XEXFileCompressionInfo(const uint8_t* data, size_t offset) {
+        memcpy(this, data + offset, sizeof(XEXFileCompressionInfo));
+        swap16(&encryptionType);
+        swap16(&compressionType);
+    }
 };
 
 struct XEXBasicCompressionBlock {
@@ -100,7 +121,9 @@ struct XEXImportLibraryHeader {
 
 class XEXImage : public IImage {
 public:
-    XEXImage() : m_baseAddress(0), m_entryPoint(0), m_memoryData(nullptr), m_memorySize(0) {}
+    XEXImage() : m_baseAddress(0), m_entryPoint(0), m_memoryData(nullptr), m_memorySize(0),
+                 m_header{}, m_loaderInfo{}, m_executionInfo{}, m_sessionKey{},
+                 m_compressionType(XEXCompressionType::None), m_encryptionType(XEXEncryptionType::None) {}
     ~XEXImage() override;
 
     bool load(const uint8_t* data, size_t size) override;
@@ -128,10 +151,6 @@ private:
 
     bool extractPEImage();
     bool processImports();
-
-    // util
-    static void swap16(uint16_t* val);
-    static void swap32(uint32_t* val);
 
 private:
     uint32_t m_baseAddress;

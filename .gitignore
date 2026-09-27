@@ -17,3 +17,5 @@
 /build
 /external/llvm_build/include
 /external/llvm_build/lib
+
+/test/dolphin/*

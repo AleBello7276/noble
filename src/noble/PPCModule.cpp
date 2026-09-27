@@ -12,7 +12,7 @@ PPCModule::PPCModule(std::string path, bool useCache, bool isKernel) {
         LoadBinary();
 
         // recompile into dym lib
-        RecompileBinary();
+        // RecompileBinary();
     }
 
     LOG_ERROR("TranslateBinary {}", "Caching NYI");

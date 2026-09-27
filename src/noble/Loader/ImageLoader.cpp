@@ -1,8 +1,10 @@
+#include "AES/AES.h"
 #include "ImageLoader.h"
 
 #include "Logger.h"
 #include "PEImage.h"
 #include "XEXImage.h"
+#include <algorithm>
 #include <cstring>
 #include <fstream>
 #include <memory>
@@ -45,7 +47,7 @@ private:
 std::unique_ptr<IImage> ImageLoader::load(const std::string& path) {
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
-        LOG_FATAL(": %s no such file or directory\n", path);
+        LOG_FATAL(": \"{}\" no such file or directory\n", path);
         return nullptr;
     }
 
@@ -246,31 +248,8 @@ void PEImage::buildMemoryImage(const uint8_t* data, size_t size) {
     m_memoryData = new uint8_t[m_memorySize];
     std::memset(m_memoryData, 0, m_memorySize);
 
-    // copy everything
-    std::memcpy(m_memoryData, data, size);
-
-    // Copy headers
-    // size_t headerSize = m_optHeader.sizeOfHeaders;
-    // if (headerSize > size) headerSize = size;
-    // std::memcpy(m_memoryData, data, headerSize);
-
-    // Copy sections
-    // for (const auto& section : m_sections) {
-    //    if (section->getPhysicalSize() > 0) {
-    //        size_t copySize = section->getPhysicalSize();
-    //        if (section->getVirtualSize() < copySize) {
-    //            copySize = section->getVirtualSize();
-    //        }
-    //
-    //        if (section->getPhysicalAddress() + copySize <= size) {
-    //            std::memcpy(
-    //                m_memoryData + section->getVirtualAddress(),
-    //                data + section->getPhysicalAddress(),
-    //                copySize
-    //            );
-    //        }
-    //    }
-    //}
+    // The file can be larger than the virtual image.
+    std::memcpy(m_memoryData, data, (std::min)(size, m_memorySize));
 }
 
 bool PEImage::loadImports(const uint8_t* data, size_t size) {
@@ -295,11 +274,11 @@ XEXImage::~XEXImage() {
     }
 }
 
-void XEXImage::swap16(uint16_t* val) {
+void swap16(uint16_t* val) {
     *val = ((*val & 0xFF00) >> 8) | ((*val & 0x00FF) << 8);
 }
 
-void XEXImage::swap32(uint32_t* val) {
+void swap32(uint32_t* val) {
     *val = ((*val & 0xFF000000) >> 24) | ((*val & 0x00FF0000) >> 8) | ((*val & 0x0000FF00) << 8)
            | ((*val & 0x000000FF) << 24);
 }
@@ -443,37 +422,57 @@ void XEXImage::decryptSessionKey() {
         printf("  Using devkit key for decryption\n");
     }
 
-    // Note: Actual AES decryption would happen here
-    // For now, just copy the file key as session key (placeholder)
-    memcpy(m_sessionKey, m_loaderInfo.fileKey, 16);
+    uint32_t roundKeys[4 * (MAXNR + 1)];
+    int rounds = rijndaelKeySetupDec(roundKeys, keyToUse, 128);
+    rijndaelDecrypt(roundKeys, rounds, m_loaderInfo.fileKey, m_sessionKey);
 
     printf("  Session key decrypted\n");
 }
 
 bool XEXImage::decompressBasic(const uint8_t* data, size_t size) {
     // Calculate uncompressed size
-    uint32_t uncompressedSize = 0;
+    size_t uncompressedSize = 0;
+
     for (const auto& block : m_compressionBlocks) {
+        if (block.dataSize > 128 * 1024 * 1024 - uncompressedSize
+            || block.zeroSize > 128 * 1024 * 1024 - uncompressedSize - block.dataSize)
+            return false;
+
         uncompressedSize += block.dataSize + block.zeroSize;
     }
 
-    if (uncompressedSize > 128 * 1024 * 1024) {  // 128MB sanity check
-        printf("Uncompressed size too large: 0x%08X\n", uncompressedSize);
+    // Source data starts at exe offset
+    if (m_header.exeOffset > size)
         return false;
+
+    size_t sourceBytes = 0;
+    for (const auto& block : m_compressionBlocks) {
+        if (block.dataSize > size - m_header.exeOffset - sourceBytes)
+            return false;
+
+        sourceBytes += block.dataSize;
     }
 
-    // Allocate memory for uncompressed data
-    m_memoryData = (uint8_t*)malloc(uncompressedSize);
-    if (!m_memoryData) {
-        printf("Failed to allocate %u bytes for decompression\n", uncompressedSize);
+    if (m_encryptionType == XEXEncryptionType::Normal && (sourceBytes % 16) != 0)
         return false;
-    }
+
+    if (m_encryptionType != XEXEncryptionType::None && m_encryptionType != XEXEncryptionType::Normal)
+        return false;
+
+    m_memoryData = (uint8_t*)malloc(uncompressedSize);
+
+    if (!m_memoryData)
+        return false;
+
     m_memorySize = uncompressedSize;
     memset(m_memoryData, 0, m_memorySize);
 
-    // Source data starts at exe offset
     const uint8_t* src = data + m_header.exeOffset;
     uint8_t* dst = m_memoryData;
+    uint32_t roundKeys[4 * (MAXNR + 1)];
+
+    const int rounds = rijndaelKeySetupDec(roundKeys, m_sessionKey, 128);
+    uint8_t ivec[16] = {};
 
     // Process each compression block
     for (const auto& block : m_compressionBlocks) {
@@ -482,10 +481,19 @@ bool XEXImage::decompressBasic(const uint8_t* data, size_t size) {
             if (m_encryptionType == XEXEncryptionType::None) {
                 // No encryption, direct copy
                 memcpy(dst, src, block.dataSize);
+
             } else {
-                // With encryption, would decrypt here
-                // For now, just copy (placeholder)
-                memcpy(dst, src, block.dataSize);
+                if (block.dataSize % 16)
+                    return false;
+
+                for (size_t n = 0; n < block.dataSize; n += 16) {
+                    rijndaelDecrypt(roundKeys, rounds, src + n, dst + n);
+
+                    for (size_t j = 0; j < 16; ++j) {
+                        dst[n + j] ^= ivec[j];
+                        ivec[j] = src[n + j];
+                    }
+                }
             }
             src += block.dataSize;
             dst += block.dataSize;
@@ -495,7 +503,7 @@ bool XEXImage::decompressBasic(const uint8_t* data, size_t size) {
         dst += block.zeroSize;
     }
 
-    printf("  Decompressed %u bytes from basic compression\n", uncompressedSize);
+    printf("  Decompressed %zu bytes from basic compression\n", uncompressedSize);
     return true;
 }
 
@@ -508,12 +516,17 @@ bool XEXImage::decompressImage(const uint8_t* data, size_t size) {
     switch (m_compressionType) {
     case XEXCompressionType::None:
         // No compression - copy directly
-        m_memorySize = m_loaderInfo.imageSize;
+        if (m_header.exeOffset > size)
+            return false;
+
+        m_memorySize = size - m_header.exeOffset;
         m_memoryData = (uint8_t*)malloc(m_memorySize);
         if (!m_memoryData) {
             return false;
         }
-        memcpy(m_memoryData, data + m_header.exeOffset, m_memorySize);
+        if (!decryptData(m_memoryData, data + m_header.exeOffset, m_memorySize))
+            return false;
+
         printf("  No compression - copied %zu bytes\n", m_memorySize);
         return true;
 
@@ -534,9 +547,26 @@ bool XEXImage::decompressImage(const uint8_t* data, size_t size) {
 }
 
 bool XEXImage::decryptData(uint8_t* dest, const uint8_t* src, size_t size) {
-    // Placeholder for AES decryption
-    // In real implementation, would use session key to decrypt
-    memcpy(dest, src, size);
+    if (m_encryptionType == XEXEncryptionType::None) {
+        memcpy(dest, src, size);
+        return true;
+    }
+
+    if (m_encryptionType != XEXEncryptionType::Normal || size % 16)
+        return false;
+
+    uint32_t roundKeys[4 * (MAXNR + 1)];
+    const int rounds = rijndaelKeySetupDec(roundKeys, m_sessionKey, 128);
+
+    uint8_t ivec[16] = {};
+    for (size_t n = 0; n < size; n += 16) {
+        rijndaelDecrypt(roundKeys, rounds, src + n, dest + n);
+
+        for (size_t j = 0; j < 16; ++j) {
+            dest[n + j] ^= ivec[j];
+            ivec[j] = src[n + j];
+        }
+    }
     return true;
 }
 
@@ -615,13 +645,14 @@ bool XEXImage::processImports() {
 
         // Calculate offset in memory
         uint32_t offset = recordAddr - m_baseAddress;
-        if (offset >= m_memorySize) {
+        if (recordAddr < m_baseAddress || offset > m_memorySize || m_memorySize - offset < 4) {
             printf("Import record address out of bounds: 0x%08X\n", recordAddr);
             continue;
         }
 
         // Read the import value
-        uint32_t value = *(uint32_t*)(m_memoryData + offset);
+        uint32_t value;
+        memcpy(&value, m_memoryData + offset, sizeof(value));
         swap32(&value);
 
         // Extract import information
@@ -669,34 +700,61 @@ bool XEXImage::parseOptionalHeaders(const uint8_t* data, size_t size) {
     size_t offset = sizeof(XEXHeader);
 
     for (uint32_t i = 0; i < m_header.headerCount; i++) {
-        if (offset + sizeof(XEXOptionalHeaderEntry) > size) {
+        if (offset > size || size - offset < 8) {
             printf("Optional header %u exceeds file bounds\n", i);
             return false;
         }
 
-        XEXOptionalHeaderEntry entry;
-        memcpy(&entry, data + offset, sizeof(entry));
-        swap32(&entry.key);
-        swap32(&entry.offset);
+        // extract optional header
+        XEXOptionalHeaderEntry entry(data, offset);
+        offset += 8;
 
-        offset += sizeof(XEXOptionalHeaderEntry);
+        // get lenght
+        switch (entry.mKey & 0xFF) {
+        case 0x00:
+        case 0x01:
+            entry.mValue = entry.mOffset;
+            entry.mOffset = 0;
+            break;
+
+        case 0xFF: {
+            if (entry.mOffset > size || size - entry.mOffset < 4)
+                return false;
+            entry.mlength = *((uint32_t*)((size_t)data + entry.mOffset));
+            entry.mOffset += 4;
+            swap32(&entry.mlength);
+
+            if (entry.mOffset > size || entry.mlength > size - entry.mOffset) {
+                printf("Optional header %u exceeds file bounds\n", i);
+                return false;
+            }
+
+            break;
+        }
+        default:
+            entry.mlength = (entry.mKey & 0xFF) * 4;
+            if (entry.mOffset > size || entry.mlength > size - entry.mOffset)
+                return false;
+            break;
+        }
+
         m_optionalHeaders.push_back(entry);
 
         // Process specific headers
-        switch (entry.key) {
+        switch (entry.mKey) {
         case XEXHeaderKey::BaseAddress:
-            m_baseAddress = entry.offset;
+            m_baseAddress = entry.mValue;
             printf("  Base address: 0x%08X\n", m_baseAddress);
             break;
 
         case XEXHeaderKey::EntryPoint:
-            m_entryPoint = entry.offset;
+            m_entryPoint = entry.mValue;
             printf("  Entry point: 0x%08X\n", m_entryPoint);
             break;
 
         case XEXHeaderKey::ExecutionInfo:
-            if (entry.offset + sizeof(XEXExecutionInfo) <= size) {
-                memcpy(&m_executionInfo, data + entry.offset, sizeof(XEXExecutionInfo));
+            if (entry.mOffset <= size && sizeof(XEXExecutionInfo) <= size - entry.mOffset) {
+                memcpy(&m_executionInfo, data + entry.mOffset, sizeof(XEXExecutionInfo));
                 swap32(&m_executionInfo.mediaId);
                 swap32(&m_executionInfo.version);
                 swap32(&m_executionInfo.baseVersion);
@@ -707,11 +765,8 @@ bool XEXImage::parseOptionalHeaders(const uint8_t* data, size_t size) {
             break;
 
         case XEXHeaderKey::FileFormatInfo:
-            if (entry.offset + sizeof(XEXFileCompressionInfo) <= size) {
-                XEXFileCompressionInfo compInfo;
-                memcpy(&compInfo, data + entry.offset, sizeof(compInfo));
-                swap16(&compInfo.compressionType);
-                swap16(&compInfo.encryptionType);
+            if (entry.mOffset <= size && sizeof(XEXFileCompressionInfo) <= size - entry.mOffset) {
+                XEXFileCompressionInfo compInfo(data, entry.mOffset);
 
                 m_compressionType = (XEXCompressionType)compInfo.compressionType;
                 m_encryptionType = (XEXEncryptionType)compInfo.encryptionType;
@@ -721,90 +776,96 @@ bool XEXImage::parseOptionalHeaders(const uint8_t* data, size_t size) {
 
                 // Load compression blocks if basic compression
                 if (m_compressionType == XEXCompressionType::Basic) {
-                    size_t blockOffset = entry.offset + sizeof(XEXFileCompressionInfo);
-                    uint32_t blockCount = (entry.key & 0xFF) * 4;
-                    if (blockCount > sizeof(XEXFileCompressionInfo)) {
-                        blockCount = (blockCount - sizeof(XEXFileCompressionInfo))
-                                     / sizeof(XEXBasicCompressionBlock);
+                    size_t blockOffset = entry.mOffset + sizeof(XEXFileCompressionInfo);
+                    uint32_t blockCount = entry.mlength >= 8 ? (entry.mlength - 8) / 8 : 0;
 
-                        for (uint32_t j = 0; j < blockCount; j++) {
-                            if (blockOffset + sizeof(XEXBasicCompressionBlock) > size)
-                                break;
-
-                            XEXBasicCompressionBlock block;
-                            memcpy(&block, data + blockOffset, sizeof(block));
-                            swap32(&block.dataSize);
-                            swap32(&block.zeroSize);
-
-                            m_compressionBlocks.push_back(block);
-                            blockOffset += sizeof(XEXBasicCompressionBlock);
-                        }
-                        printf("  Loaded %u compression blocks\n", blockCount);
+                    for (uint32_t i = 0; i < blockCount; ++i) {
+                        XEXBasicCompressionBlock block;
+                        memcpy(&block, data + blockOffset, sizeof(block));
+                        swap32(&block.dataSize);
+                        swap32(&block.zeroSize);
+                        m_compressionBlocks.push_back(block);
+                        blockOffset += sizeof(XEXBasicCompressionBlock);
                     }
+                    printf("  Loaded %u compression blocks\n", blockCount);
                 }
             }
             break;
 
         case XEXHeaderKey::ImportLibraries: {
-            // Read import library header
-            XEXImportLibraryHeader libHeader;
-            if (entry.offset + sizeof(libHeader) > size)
-                break;
+            if (entry.mlength < 8 || entry.mOffset > size || entry.mlength > size - entry.mOffset)
+                return false;
 
-            memcpy(&libHeader, data + entry.offset, sizeof(libHeader));
-            swap32(&libHeader.size);
-            swap32(&libHeader.importId);
-            swap32(&libHeader.version);
-            swap32(&libHeader.minVersion);
-            swap16(&libHeader.nameIndex);
-            swap16(&libHeader.recordCount);
+            BinaryReader imports(data, size);
+            imports.seek(entry.mOffset);
+            uint32_t stringTableSize, libraryCount;
 
-            // Read string table
-            size_t stringTableOffset = entry.offset + sizeof(libHeader);
-            size_t stringTableSize = libHeader.size - sizeof(libHeader) - (libHeader.recordCount * 4);
+            if (!imports.read(&stringTableSize, 4) || !imports.read(&libraryCount, 4))
+                return false;
 
-            if (stringTableOffset + stringTableSize > size)
-                break;
+            swap32(&stringTableSize);
+            swap32(&libraryCount);
+            const size_t end = entry.mOffset + entry.mlength;
 
-            const char* stringTable = (const char*)(data + stringTableOffset);
+            if (stringTableSize > end - imports.tell())
+                return false;
 
-            // Extract library names
-            size_t strOffset = 0;
-            while (strOffset < stringTableSize) {
-                const char* libName = stringTable + strOffset;
-                if (*libName) {
-                    m_libraryNames.push_back(libName);
-                    printf("  Import library: %s\n", libName);
+            const char* stringTable = reinterpret_cast<const char*>(imports.current());
+            imports.seek(imports.tell() + stringTableSize);
+
+            for (uint32_t j = 0; j < libraryCount; ++j) {
+                XEXImportLibraryHeader libHeader;
+                if (imports.tell() > end || sizeof(libHeader) > end - imports.tell()
+                    || !imports.read(&libHeader, sizeof(libHeader)))
+                    return false;
+
+                swap32(&libHeader.size);
+                swap16(&libHeader.nameIndex);
+                swap16(&libHeader.recordCount);
+
+                size_t nameOffset = 0;
+                uint16_t nameIndex = libHeader.nameIndex & 0xFF;
+                for (uint16_t k = 0; k < nameIndex; ++k) {
+                    if (nameOffset >= stringTableSize)
+                        return false;
+
+                    const void* terminator
+                        = memchr(stringTable + nameOffset, 0, stringTableSize - nameOffset);
+
+                    if (!terminator)
+                        return false;
+
+                    nameOffset = static_cast<const char*>(terminator) - stringTable + 1;
+                    nameOffset = (nameOffset + 3) & ~size_t(3);
                 }
-                strOffset += strlen(libName) + 1;
-                // Align to 4 bytes
-                if (strOffset % 4) {
-                    strOffset += 4 - (strOffset % 4);
+
+                if (nameOffset >= stringTableSize)
+                    return false;
+
+                const void* terminator = memchr(stringTable + nameOffset, 0, stringTableSize - nameOffset);
+
+                if (!terminator)
+                    return false;
+
+                m_libraryNames.emplace_back(stringTable + nameOffset);
+                for (uint16_t k = 0; k < libHeader.recordCount; ++k) {
+                    uint32_t record;
+
+                    if (imports.tell() > end || end - imports.tell() < 4 || !imports.read(&record, 4))
+                        return false;
+
+                    swap32(&record);
+                    m_importRecords.push_back(record);
                 }
             }
-
-            // Read import records
-            size_t recordOffset = stringTableOffset + stringTableSize;
-            for (uint16_t j = 0; j < libHeader.recordCount; j++) {
-                if (recordOffset + 4 > size)
-                    break;
-
-                uint32_t record;
-                memcpy(&record, data + recordOffset, 4);
-                swap32(&record);
-                m_importRecords.push_back(record);
-                recordOffset += 4;
-            }
-
-            printf("  Loaded %u import records\n", libHeader.recordCount);
         } break;
 
         case XEXHeaderKey::DefaultStackSize:
-            printf("  Stack size: 0x%08X\n", entry.offset);
+            printf("  Stack size: 0x%08X\n", entry.mValue);
             break;
 
         case XEXHeaderKey::DefaultHeapSize:
-            printf("  Heap size: 0x%08X\n", entry.offset);
+            printf("  Heap size: 0x%08X\n", entry.mValue);
             break;
         }
     }
