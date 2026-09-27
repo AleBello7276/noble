@@ -31,3 +31,49 @@ set(INCLUDE
 
 include_directories(${INCLUDE})
 add_executable(noble ${CMAKE_CURRENT_SOURCE_DIR}/${SRC})
+
+
+# Rust 
+
+find_program(CARGO_EXECUTABLE cargo REQUIRED)
+set(RUST_FFI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ffi")
+set(RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-target")
+set(RUST_CARGO_HOME "${CMAKE_CURRENT_BINARY_DIR}/cargo-home")
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(RUST_PROFILE debug)
+    set(RUST_PROFILE_FLAG)
+else()
+    set(RUST_PROFILE release)
+    set(RUST_PROFILE_FLAG --release)
+endif()
+
+if(WIN32)
+    set(RUST_LIBRARY_NAME noble_ffi.lib)
+else()
+    set(RUST_LIBRARY_NAME libnoble_ffi.a)
+endif()
+
+set(RUST_LIBRARY "${RUST_TARGET_DIR}/${RUST_PROFILE}/${RUST_LIBRARY_NAME}")
+
+add_custom_command(
+    OUTPUT "${RUST_LIBRARY}"
+    COMMAND "${CMAKE_COMMAND}" -E env
+        "CARGO_TARGET_DIR=${RUST_TARGET_DIR}"
+        "CARGO_HOME=${RUST_CARGO_HOME}"
+        "${CARGO_EXECUTABLE}" build
+        --manifest-path "${RUST_FFI_DIR}/Cargo.toml"
+        --locked ${RUST_PROFILE_FLAG}
+    DEPENDS
+        "${RUST_FFI_DIR}/Cargo.toml"
+        "${RUST_FFI_DIR}/Cargo.lock"
+        "${RUST_FFI_DIR}/src/lib.rs"
+    WORKING_DIRECTORY "${RUST_FFI_DIR}"
+    VERBATIM
+)
+
+add_custom_target(noble_ffi_build DEPENDS "${RUST_LIBRARY}")
+add_library(noble_ffi STATIC IMPORTED GLOBAL)
+set_target_properties(noble_ffi PROPERTIES IMPORTED_LOCATION "${RUST_LIBRARY}")
+add_dependencies(noble_ffi noble_ffi_build)
+target_link_libraries(noble PRIVATE noble_ffi)
