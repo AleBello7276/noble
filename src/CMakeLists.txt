@@ -37,7 +37,7 @@ set(SRC
     ${Core}
     noble/kernel/Kernel.cpp
     noble/cpu/Scheduler.cpp
-    noble/cpu/CpuBackend.cpp
+    noble/cpu/CpuExecutor.cpp
 )
 
 set(INCLUDE
@@ -87,6 +87,7 @@ add_custom_command(
         "${RUST_FFI_DIR}/Cargo.toml"
         "${RUST_FFI_DIR}/Cargo.lock"
         "${RUST_FFI_DIR}/src/lib.rs"
+        "${RUST_FFI_DIR}/src/cranelift.rs"
     WORKING_DIRECTORY "${RUST_FFI_DIR}"
     VERBATIM
 )

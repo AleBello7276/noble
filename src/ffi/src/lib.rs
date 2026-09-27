@@ -1,5 +1,7 @@
 use powerpc::{Argument, Arguments, Extensions, Ins, ParsedIns};
 
+mod cranelift;
+
 #[repr(C)]
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub enum PpcArgumentKind {
