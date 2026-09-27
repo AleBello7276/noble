@@ -1,24 +1,24 @@
-# LLVM360
+# noble
 
 ## Info
 
-This is just a little personal experiment i'm doing with llvm, the code is not good :} i took some stuff from the old redex's recompiler project like the XexLoader and some of the instructions decoded.
+Introducing *noble* (previously was LLVM360) a little personal experimental xbox 360 emulator using Cranelift as a codegen optimiser backend.
 
 --------------- 
 Join the project [Discord][dis] server! 
 
 ### Name
-"LLVM360" LLVM + xbox360, but it's just a temporany, i don't really like it so will probably change
+*noble*, refers to Noble gasses of which Xenon is a part of them and is also the codename of the console.
 
 ## Building
 - Clang compiler is required
+- Cargo and a Rust compiler is required to compile Cranelift and the FFI
 - Git Clone this repository
 - idk that's it
 - If everything is good and i or you didn't messed up something, it should compile fine
 
 ## Contributing
-if want to contribute, make a fork and a PR :} also join the discord server! 
-
+if want to contribute, make a fork and a PR, also join the discord server! 
 
 
 [dis]: https://discord.gg/JufwFS9mmf

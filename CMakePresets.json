@@ -1,0 +1,92 @@
+﻿{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "clang-debug",
+      "displayName": "x64 Clang Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/clang-debug",
+      "installDir": "${sourceDir}/out/install/clang-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "clang-release",
+      "displayName": "x64 Clang Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/clang-release",
+      "installDir": "${sourceDir}/out/install/clang-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "clang-relwithdebinfo",
+      "displayName": "x64 Clang RelWithDebInfo",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/clang-relwithdebinfo",
+      "installDir": "${sourceDir}/out/install/clang-relwithdebinfo",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "msvc-debug",
+      "displayName": "x64 MSVC Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/msvc-debug",
+      "installDir": "${sourceDir}/out/install/msvc-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "cl",
+        "CMAKE_CXX_COMPILER": "cl",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "msvc-release",
+      "displayName": "x64 MSVC Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/msvc-release",
+      "installDir": "${sourceDir}/out/install/msvc-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_COMPILER": "cl",
+        "CMAKE_CXX_COMPILER": "cl",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "clang-debug",
+      "configurePreset": "clang-debug"
+    },
+    {
+      "name": "clang-release",
+      "configurePreset": "clang-release"
+    },
+    {
+      "name": "clang-relwithdebinfo",
+      "configurePreset": "clang-relwithdebinfo"
+    },
+    {
+      "name": "msvc-debug",
+      "configurePreset": "msvc-debug"
+    },
+    {
+      "name": "msvc-release",
+      "configurePreset": "msvc-release"
+    }
+  ]
+}
