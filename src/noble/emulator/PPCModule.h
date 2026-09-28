@@ -39,6 +39,8 @@ struct PPCFuncMap {
     GuestAddress mStart;
     GuestAddress mEnd;
     std::vector<PPCBasicBlock> bbs_;
+    bool mTailCallProlog;
+    bool mInPdata;
 };
 
 class PPCModule {
@@ -70,6 +72,9 @@ private:
 
     /* analyse function bounds in text with some heuristics */
     void AnalyseTEXT(XLoader::Section* text);
+
+    /* do some CFG analysis over functions in *funcs_* to map Basic Blocks */
+    void BuildFunctionCFG(XLoader::Section* text);
 
 private:
     GuestAddress mCodeStart_;

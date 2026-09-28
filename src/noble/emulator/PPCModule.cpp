@@ -1,6 +1,7 @@
 #include "PPCModule.h"
 
 #include "Logger.h"
+#include <algorithm>
 #include <assert.h>
 #include <cstring>
 #include <unordered_set>
@@ -64,6 +65,77 @@ void PPCModule::AnalyseFunctions() {
     AnalyseTEXT(text);
 
     // map Basic blocks in functions
+    BuildFunctionCFG(text);
+
+    return;
+}
+
+void PPCModule::BuildFunctionCFG(XLoader::Section* text) {
+    const GuestAddress virtualAddr = text->getVirtualAddress();
+    const GuestAddress virtualSize = text->getVirtualSize();
+
+    const GuestAddress base = mImage->getBaseAddress();
+    const GuestAddress textStart = base + virtualAddr;
+    const GuestAddress textEnd = textStart + virtualSize;
+
+    const auto* secData = static_cast<const uint8_t*>(mImage->getMemoryData()) + virtualAddr;
+
+    for (auto& [key, func] : funcs_) {
+        func.bbs_.clear();
+
+        // check if out if ranges are out of bounds, and if aligned
+        if (func.mStart < textStart || func.mEnd > textEnd || func.mStart >= func.mEnd
+            || ((func.mStart | func.mEnd) & 3)) {
+            assert(false);
+            continue;
+        }
+
+        std::vector<GuestAddress> boundaries;
+        boundaries.push_back(func.mStart);
+        boundaries.push_back(func.mEnd);
+
+        for (GuestAddress pc = func.mStart; pc < func.mEnd; pc += 4) {
+            const auto offset = pc - textStart;
+
+            uint32_t raw;
+            std::memcpy(&raw, secData + offset, sizeof(raw));
+
+            codec::Ins inst{bswap32(raw)};
+
+            const bool directBranch
+                = (inst.is_unconditional_branch() || inst.is_conditional_branch()) && !inst.field_lk();
+
+            const bool indirectTerminator
+                = inst.is_blr() || (inst.op == PpcOpcode::Bcctr && !inst.field_lk());
+
+            if (directBranch) {
+                if (auto dest = inst.branch_dest(pc)) {
+                    if (*dest >= func.mStart && *dest < func.mEnd)
+                        boundaries.push_back(*dest);
+                }
+
+                // Branch ends the current BB.
+                if (pc + 4 < func.mEnd)
+                    boundaries.push_back(pc + 4);
+            } else if (indirectTerminator) {
+                if (pc + 4 < func.mEnd)
+                    boundaries.push_back(pc + 4);
+            }
+        }
+
+        std::sort(boundaries.begin(), boundaries.end());
+        boundaries.erase(std::unique(boundaries.begin(), boundaries.end()), boundaries.end());
+
+        for (size_t i = 0; i + 1 < boundaries.size(); ++i) {
+            if (boundaries[i] == boundaries[i + 1])
+                continue;
+
+            func.bbs_.push_back({
+                .mStartAddress = boundaries[i],
+                .mEndAddress = boundaries[i + 1],
+            });
+        }
+    }
 }
 
 void PPCModule::AnalysePDATAFuncs(XLoader::Section* pdata) {
@@ -89,7 +161,8 @@ void PPCModule::AnalysePDATAFuncs(XLoader::Section* pdata) {
         pdataEntry.read(*(PDATAFunc*)(secDataPtr + (address - start)));
 
         GuestAddress endAddr = ((pdataEntry.FunctionLength * 4) + pdataEntry.StartAddress);
-        PPCFuncMap func = {.mStart = pdataEntry.StartAddress, .mEnd = endAddr};
+        PPCFuncMap func = {
+            .mStart = pdataEntry.StartAddress, .mEnd = endAddr, .mTailCallProlog = false, .mInPdata = true};
 
         funcs_.try_emplace(pdataEntry.StartAddress, func);
 
@@ -125,25 +198,30 @@ void PPCModule::AnalyseTEXT(XLoader::Section* text) {
     // while checking if not already in map (because pdata may already have it)
     std::unordered_set<GuestAddress> entries;
 
-    while (address < end) {
+    for (GuestAddress address = start; address < end; address += 4) {
         uint32_t data = bswap32(*(uint32_t*)(secDataPtr + (address - start)));
 
-        codec::Ins inst = codec::Ins(data);
+        codec::Ins inst(data);
 
-        // bl instruction
-        if (inst.is_unconditional_branch() && inst.field_lk()) {
-            auto dest = inst.branch_dest(address);
+        // is not a BL instruction
+        if (!inst.is_unconditional_branch() || !inst.field_lk())
+            continue;
 
-            if (dest) {
-                GuestAddress target = *dest;
+        auto dest = inst.branch_dest(address);
+        if (!dest)
+            continue;
 
-                if (funcs_.contains(target) == false) {
-                    entries.insert(target);
-                }
-            }
-        }
+        const GuestAddress target = *dest;
 
-        address += 4;
+        if (target & 3)  // check if function target is aligned
+            continue;
+
+        // already in pdata
+        if (funcs_.contains(target))
+            continue;
+
+        // valid
+        entries.insert(target);
     }
 
     // at this point *entries* set is filled with unique entry points
@@ -151,11 +229,11 @@ void PPCModule::AnalyseTEXT(XLoader::Section* text) {
 
     address = start;
 
-    uint32_t funcCount = 0;
+    // uint32_t funcCount = 0;
 
     for (GuestAddress funcStart : entries) {
         address = funcStart;
-        funcCount++;
+        // funcCount++;
 
         for (;;) {
             uint32_t data = bswap32(*(uint32_t*)(secDataPtr + (address - start)));
@@ -167,24 +245,20 @@ void PPCModule::AnalyseTEXT(XLoader::Section* text) {
             if (inst.is_blr() || inst.op == PpcOpcode::Bcctr) {
                 // blr + Illegal (0 padding)
                 if (instAhead.op == PpcOpcode::Illegal) {
-                    LOG_DEBUG("func {} -> blr or bctr + Illegal (0 padding)", funcCount);
+                    // LOG_DEBUG("func {} -> blr or bctr + Illegal (0 padding)", funcCount);
 
-                    PPCFuncMap func;
-                    func.mStart = funcStart;
-                    func.mEnd = address + 4;
-
+                    PPCFuncMap func = {.mStart = funcStart, .mEnd = address + 4, .mTailCallProlog = false};
+                    funcs_.try_emplace(func.mStart, func);
                     break;  // next entry
                 }
 
                 // blr + next addr is a function entry
                 GuestAddress nextAddr = address + 4;
                 if (entries.contains(nextAddr) || funcs_.contains(nextAddr)) {
-                    LOG_DEBUG("func {} -> blr or bctr + next addr is a function entry", funcCount);
+                    // LOG_DEBUG("func {} -> blr or bctr + next addr is a function entry", funcCount);
 
-                    PPCFuncMap func;
-                    func.mStart = funcStart;
-                    func.mEnd = address + 4;
-
+                    PPCFuncMap func = {.mStart = funcStart, .mEnd = address + 4, .mTailCallProlog = false};
+                    funcs_.try_emplace(func.mStart, func);
                     break;  // next entry
                 }
             }
@@ -192,13 +266,21 @@ void PPCModule::AnalyseTEXT(XLoader::Section* text) {
             // check tail call
             if ((inst.is_unconditional_branch() && !inst.field_lk())) {
                 //  tail call + Illegal (0 padding)
-                if ((instAhead.op == PpcOpcode::Illegal) &&) {
-                    LOG_DEBUG("func {} -> tail call + Illegal (0 padding)", funcCount);
+                if (instAhead.op == PpcOpcode::Illegal) {
+                    // LOG_DEBUG("func {} -> tail call + Illegal (0 padding)", funcCount);
 
-                    PPCFuncMap func;
-                    func.mStart = funcStart;
-                    func.mEnd = address + 4;
+                    PPCFuncMap func = {.mStart = funcStart, .mEnd = address + 4, .mTailCallProlog = true};
+                    funcs_.try_emplace(func.mStart, func);
+                    break;  // next entry
+                }
 
+                //  tail call + next addr is a function entry
+                GuestAddress nextAddr = address + 4;
+                if (entries.contains(nextAddr) || funcs_.contains(nextAddr)) {
+                    // LOG_DEBUG("func {} -> tail call + Illegal (0 padding)", funcCount);
+
+                    PPCFuncMap func = {.mStart = funcStart, .mEnd = address + 4, .mTailCallProlog = true};
+                    funcs_.try_emplace(func.mStart, func);
                     break;  // next entry
                 }
             }
