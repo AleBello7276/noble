@@ -25,9 +25,9 @@ public:
     CpuExecutor(Memory& memory);
     ExecutionResult Execute(PPCContext& context, const std::atomic_bool& terminate, std::stop_token stop);
 
-    JITBackend* jit() { return jit_; }
+    JITBackend* jit() { return jit_.get(); }
 
 private:
     Memory& memory_;
-    JITBackend* jit_;
+    std::unique_ptr<JITBackend> jit_;
 };

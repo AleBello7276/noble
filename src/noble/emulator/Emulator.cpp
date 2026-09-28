@@ -71,6 +71,9 @@ bool Emulator::Run() {
     if (!mInitialThread_)
         return false;
 
+    // compile and map boot module
+    cpu_.jit()->CompilePPCModule(mStartModule);
+
     // wake scheduler and wait for main thread to start
     mScheduler_.Start();
     mScheduler_.WaitForThread(mInitialThread_);

@@ -12,7 +12,9 @@ using GuestAddress = uint32_t;
 
 class JITBackend {
 public:
-    /* jit all blocks in a PPCModule .text range, instructions are usually decoded at load */
+    virtual ~JITBackend() = default;
+
+    /* jit all blocks in a PPCModule which does function bound analysis and simple cfg at load */
     virtual void CompilePPCModule(PPCModule& module) = 0;
 
     /* JIT a block of instructions at address in guest memory */

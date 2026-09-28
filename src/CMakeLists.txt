@@ -3,6 +3,15 @@ cmake_minimum_required(VERSION 3.30)
 project(noble)
 
 
+set(Core 
+)
+if(WIN32)
+    list(APPEND Core noble/core/platform/WinAlloc.cpp)
+else()
+    list(APPEND Core noble/core/platform/PosixAlloc.cpp)
+endif()
+
+
 set(Loader 
     noble/Loader/PEImage.h
     noble/Loader/XexImage.h
@@ -19,13 +28,16 @@ set(Emulator
     noble/emulator/PPCModule.cpp
 )
 
-set(Core 
+set(Cpu
+    noble/cpu/Scheduler.cpp
+    noble/cpu/CpuExecutor.cpp
+    noble/cpu/cl/CraneliftJIT.cpp
 )
-if(WIN32)
-    list(APPEND Core noble/core/platform/WinAlloc.cpp)
-else()
-    list(APPEND Core noble/core/platform/PosixAlloc.cpp)
-endif()
+
+set(Kernel
+    noble/kernel/Kernel.cpp
+)
+
 
 set(SRC
     noble/noble.cpp
@@ -35,9 +47,8 @@ set(SRC
     ${Loader}
     ${Emulator}
     ${Core}
-    noble/kernel/Kernel.cpp
-    noble/cpu/Scheduler.cpp
-    noble/cpu/CpuExecutor.cpp
+    ${Cpu} 
+    ${Kernel} 
 )
 
 set(INCLUDE
