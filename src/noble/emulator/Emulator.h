@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Memory.h"
-#include "PPCModule.h"
+
 #include "cpu/Scheduler.h"
 #include "kernel/Kernel.h"
 #include <string>
@@ -24,6 +24,7 @@ private:
     Memory mMemory_;
     Scheduler mScheduler_;
     Kernel mKernel_;
+    CpuExecutor cpu_;
 
     PPCModule mStartModule;
     KProcess* mTitleProcess_ = nullptr;

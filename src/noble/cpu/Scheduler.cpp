@@ -6,7 +6,7 @@
 
 thread_local HardwareThread* gCurrentProcessor = nullptr;
 
-Scheduler::Scheduler(Memory& memory) : cpu_(memory) {
+Scheduler::Scheduler(CpuExecutor& cpu) : cpu_(cpu) {
     for (uint32_t i = 0; i < kProcessorCount; ++i) {
         processors_[i].id = i;
     }
@@ -149,8 +149,7 @@ void Scheduler::WorkerMain(HWT_ID processor_id, std::stop_token stop_token) {
             thread->mCurrentProcessor = processor_id;
         }
 
-        ExecutionResult result = cpu_.Execute(thread->mContext, ExecutionBudget{quantum_},
-                                              thread->mTerminateRequested, stop_token);
+        ExecutionResult result = cpu_.Execute(thread->mContext, thread->mTerminateRequested, stop_token);
 
         HandleExecutionResult(processor_id, thread, result);
     }

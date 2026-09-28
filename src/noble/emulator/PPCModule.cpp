@@ -4,7 +4,7 @@
 #include "core/bswap.h"
 #include <cstring>
 
-PPCModule::PPCModule() : m_type(BIN_UNKNOWN), mID(UINT32_MAX) {}
+PPCModule::PPCModule() : m_type(BinaryType::BIN_UNKNOWN), mID(UINT32_MAX) {}
 
 PPCModule::PPCModule(std::string path, bool useCache, bool isKernel) {
     mPath = path;
@@ -23,11 +23,11 @@ void PPCModule::LoadBinary() {
         LOG_ERROR("PBinaryHandle::LoadBinary -> Failed to load binary image");
         return;
     }
-    if (m_type == BIN_UNKNOWN) {
+    if (m_type == BinaryType::BIN_UNKNOWN) {
         if (dynamic_cast<XLoader::XEXImage*>(mImage.get()) != nullptr) {
-            m_type = BIN_XEX;
+            m_type = BinaryType::BIN_XEX;
         } else if (dynamic_cast<XLoader::PEImage*>(mImage.get()) != nullptr) {
-            m_type = BIN_PE;
+            m_type = BinaryType::BIN_PE;
         } else {
             LOG_ERROR("PBinaryHandle::LoadBinary -> Unknown binary type");
             mImage.reset();

@@ -6,9 +6,9 @@
 #include "Loader/XEXImage.h"
 #include "powerpc-rs.h"
 
-enum BinaryType : uint8_t { BIN_XEX, BIN_PE, BIN_KERNEL, BIN_UNKNOWN };
+using GuestAddress = uint32_t;
 
-const uint32_t MAX_BLOCK_SIZE = 1;  // how many instructions a block can contain -1 is unlimited
+enum class BinaryType : uint8_t { BIN_XEX, BIN_PE, BIN_KERNEL, BIN_UNKNOWN };
 
 class PPCModule {
 public:
@@ -16,7 +16,7 @@ public:
     std::unique_ptr<XLoader::IImage> mImage;
     BinaryType m_type;
     uint32_t mID;
-    std::unordered_map<uint32_t, codec::PpcIns> mInstrMap;  // address -> instruction
+    std::unordered_map<GuestAddress, codec::PpcIns> mInstrMap;  // address -> instruction
 
     PPCModule();
     PPCModule(std::string path, bool useCache = false, bool isKernel = false);

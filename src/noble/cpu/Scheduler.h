@@ -7,7 +7,7 @@
 #include <stop_token>
 #include <thread>
 
-#include "CpuBackend.h"
+#include "CpuExecutor.h"
 #include "kernel/KThread.h"
 
 struct HardwareThread {
@@ -23,7 +23,7 @@ public:
     static constexpr size_t kProcessorCount = 6;
     static constexpr ThreadAffinity kAllProcessorsMask = 0x3F;
 
-    explicit Scheduler(Memory& memory);
+    explicit Scheduler(CpuExecutor& cpu);
     ~Scheduler();
 
     bool Initialise();
@@ -58,6 +58,5 @@ private:
 
     bool started_ = false;
 
-    uint64_t quantum_ = 50'000;
-    CpuBackend cpu_;
+    CpuExecutor& cpu_;
 };
