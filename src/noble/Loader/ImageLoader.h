@@ -7,9 +7,9 @@
 class ImageLoader;
 class Section;
 
-enum class ImportType { Function, Variable };
+enum class ImportType { Function, Variable, Unknown };
 
-enum class XboxLibrary { XboxKrnl, Xam, Xbdm, Xapi };
+enum class XboxLibrary { XboxKrnl, Xam, Xbdm, Xapi, Unknown };
 
 namespace XLoader {
 
@@ -17,6 +17,7 @@ struct Import {
     XboxLibrary library;
     ImportType type;
     std::string name;
+    std::string libraryName;
     uint32_t ordinal;
     uint32_t tableAddr;
     uint32_t funcImportAddr;

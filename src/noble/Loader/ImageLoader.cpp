@@ -4,6 +4,7 @@
 #include "Logger.h"
 #include "PEImage.h"
 #include "XEXImage.h"
+#include "table/ImportTable.h"
 #include <algorithm>
 #include <cstring>
 #include <fstream>
@@ -16,7 +17,7 @@ public:
     BinaryReader(const uint8_t* data, size_t size) : m_data(data), m_size(size), m_offset(0) {}
 
     bool read(void* dest, size_t count) {
-        if (m_offset + count > m_size) {
+        if (count > m_size - m_offset) {
             return false;
         }
         std::memcpy(dest, m_data + m_offset, count);
@@ -639,57 +640,80 @@ bool XEXImage::extractPEImage() {
 }
 
 bool XEXImage::processImports() {
-    // Process import records
-    for (size_t i = 0; i < m_importRecords.size(); i++) {
-        uint32_t recordAddr = m_importRecords[i];
+    m_imports.clear();
 
-        // Calculate offset in memory
-        uint32_t offset = recordAddr - m_baseAddress;
-        if (recordAddr < m_baseAddress || offset > m_memorySize || m_memorySize - offset < 4) {
-            printf("Import record address out of bounds: 0x%08X\n", recordAddr);
-            continue;
+    for (const auto& library : m_importLibraries) {
+        const XboxLibrary lib = LibraryFromName(library.name);
+        Import* previous = nullptr;
+
+        for (const uint32_t address : library.addresses) {
+            if ((address & 3) || address < m_baseAddress)
+                return false;
+
+            const size_t offset = address - m_baseAddress;
+            if (offset > m_memorySize || m_memorySize - offset < 4)
+                return false;
+
+            uint32_t value;
+            std::memcpy(&value, m_memoryData + offset, sizeof(value));
+            swap32(&value);
+
+            const uint8_t recordType = value >> 24;
+            const uint16_t ordinal = value & 0xFFFF;
+            const auto* definition = FindImport(lib, ordinal);
+
+            if (recordType == 0) {
+                auto import = std::make_unique<Import>(
+                    lib, definition ? definition->type : ImportType::Unknown,
+                    definition ? std::string(definition->name) : library.name + "_" + std::to_string(ordinal),
+                    ordinal);
+
+                import->libraryName = library.name;
+                import->tableAddr = address;
+                previous = import.get();
+                m_imports.push_back(std::move(import));
+
+            } else if (recordType == 1) {
+                // use the library record to identify a thunk and verify its complete body
+                if (m_memorySize - offset < 16 || uint64_t(address) + 16 > 0x100000000ull)
+                    return false;
+
+                uint32_t ctr, branch;
+                std::memcpy(&ctr, m_memoryData + offset + 8, 4);
+                std::memcpy(&branch, m_memoryData + offset + 12, 4);
+                swap32(&ctr);
+                swap32(&branch);
+
+                if (ctr != 0x7D6903A6 || branch != 0x4E800420)
+                    return false;
+
+                if (definition && definition->type != ImportType::Function)
+                    return false;
+
+                if (!previous || previous->ordinal != ordinal || previous->funcImportAddr) {
+                    auto import
+                        = std::make_unique<Import>(lib, ImportType::Function,
+                                                   definition ? std::string(definition->name) :
+                                                                library.name + "_" + std::to_string(ordinal),
+                                                   ordinal);
+
+                    import->libraryName = library.name;
+                    previous = import.get();
+                    m_imports.push_back(std::move(import));
+                }
+
+                previous->type = ImportType::Function;
+                previous->funcImportAddr = address;
+            } else if (recordType == 2) {
+                // some images list the second placeholder word as another record
+                if (!previous || previous->ordinal != ordinal || !previous->funcImportAddr
+                    || uint64_t(previous->funcImportAddr) + 4 != address)
+                    return false;
+
+            } else {
+                return false;
+            }
         }
-
-        // Read the import value
-        uint32_t value;
-        memcpy(&value, m_memoryData + offset, sizeof(value));
-        swap32(&value);
-
-        // Extract import information
-        uint8_t type = (value >> 24) & 0xFF;
-        uint8_t libIndex = (value >> 16) & 0xFF;
-        uint16_t ordinal = value & 0xFFFF;
-
-        if (libIndex >= m_libraryNames.size()) {
-            printf("Invalid library index: %u\n", libIndex);
-            continue;
-        }
-
-        // Determine library type
-        XboxLibrary lib = XboxLibrary::XboxKrnl;
-        const std::string& libName = m_libraryNames[libIndex];
-        if (libName.find("xam") != std::string::npos) {
-            lib = XboxLibrary::Xam;
-        } else if (libName.find("xbdm") != std::string::npos) {
-            lib = XboxLibrary::Xbdm;
-        } else if (libName.find("xapi") != std::string::npos) {
-            lib = XboxLibrary::Xapi;
-        }
-
-        // Create import based on type
-        ImportType impType = (type == 0) ? ImportType::Variable : ImportType::Function;
-
-        char importName[256];
-        snprintf(importName, sizeof(importName), "%s_%u", libName.c_str(), ordinal);
-
-        auto import = std::make_unique<Import>(lib, impType, importName, ordinal);
-        import->tableAddr = recordAddr;
-        import->funcImportAddr = recordAddr;
-
-        m_imports.push_back(std::move(import));
-
-        // printf("  Import: %s (type=%s, lib=%s, ordinal=%u)\n", importName,
-        //        (impType == ImportType::Function) ? "func" : "var", libName.c_str(), ordinal);
     }
 
     printf("  Processed %zu imports\n", m_imports.size());
@@ -720,9 +744,14 @@ bool XEXImage::parseOptionalHeaders(const uint8_t* data, size_t size) {
         case 0xFF: {
             if (entry.mOffset > size || size - entry.mOffset < 4)
                 return false;
-            entry.mlength = *((uint32_t*)((size_t)data + entry.mOffset));
+            std::memcpy(&entry.mlength, data + entry.mOffset, sizeof(entry.mlength));
             entry.mOffset += 4;
             swap32(&entry.mlength);
+
+            if (entry.mlength < 4)
+                return false;
+
+            entry.mlength -= 4;
 
             if (entry.mOffset > size || entry.mlength > size - entry.mOffset) {
                 printf("Optional header %u exceeds file bounds\n", i);
@@ -765,6 +794,9 @@ bool XEXImage::parseOptionalHeaders(const uint8_t* data, size_t size) {
             break;
 
         case XEXHeaderKey::FileFormatInfo:
+            if (entry.mlength < sizeof(XEXFileCompressionInfo))
+                return false;
+
             if (entry.mOffset <= size && sizeof(XEXFileCompressionInfo) <= size - entry.mOffset) {
                 XEXFileCompressionInfo compInfo(data, entry.mOffset);
 
@@ -776,8 +808,12 @@ bool XEXImage::parseOptionalHeaders(const uint8_t* data, size_t size) {
 
                 // Load compression blocks if basic compression
                 if (m_compressionType == XEXCompressionType::Basic) {
+                    if ((entry.mlength - sizeof(XEXFileCompressionInfo)) % sizeof(XEXBasicCompressionBlock))
+                        return false;
+
                     size_t blockOffset = entry.mOffset + sizeof(XEXFileCompressionInfo);
-                    uint32_t blockCount = entry.mlength >= 8 ? (entry.mlength - 8) / 8 : 0;
+                    uint32_t blockCount
+                        = (entry.mlength - sizeof(XEXFileCompressionInfo)) / sizeof(XEXBasicCompressionBlock);
 
                     for (uint32_t i = 0; i < blockCount; ++i) {
                         XEXBasicCompressionBlock block;
@@ -798,13 +834,13 @@ bool XEXImage::parseOptionalHeaders(const uint8_t* data, size_t size) {
 
             BinaryReader imports(data, size);
             imports.seek(entry.mOffset);
-            uint32_t stringTableSize, libraryCount;
+            uint32_t stringTableSize, stringCount;
 
-            if (!imports.read(&stringTableSize, 4) || !imports.read(&libraryCount, 4))
+            if (!imports.read(&stringTableSize, 4) || !imports.read(&stringCount, 4))
                 return false;
 
             swap32(&stringTableSize);
-            swap32(&libraryCount);
+            swap32(&stringCount);
             const size_t end = entry.mOffset + entry.mlength;
 
             if (stringTableSize > end - imports.tell())
@@ -813,7 +849,8 @@ bool XEXImage::parseOptionalHeaders(const uint8_t* data, size_t size) {
             const char* stringTable = reinterpret_cast<const char*>(imports.current());
             imports.seek(imports.tell() + stringTableSize);
 
-            for (uint32_t j = 0; j < libraryCount; ++j) {
+            while (imports.tell() < end) {
+                const size_t libraryStart = imports.tell();
                 XEXImportLibraryHeader libHeader;
                 if (imports.tell() > end || sizeof(libHeader) > end - imports.tell()
                     || !imports.read(&libHeader, sizeof(libHeader)))
@@ -823,8 +860,18 @@ bool XEXImage::parseOptionalHeaders(const uint8_t* data, size_t size) {
                 swap16(&libHeader.nameIndex);
                 swap16(&libHeader.recordCount);
 
+                if (libHeader.size < sizeof(libHeader) || libHeader.size > end - libraryStart
+                    || libHeader.recordCount > (libHeader.size - sizeof(libHeader)) / 4)
+                    return false;
+
+                const size_t libraryEnd = libraryStart + libHeader.size;
+
                 size_t nameOffset = 0;
                 uint16_t nameIndex = libHeader.nameIndex & 0xFF;
+
+                if (nameIndex >= stringCount)
+                    return false;
+
                 for (uint16_t k = 0; k < nameIndex; ++k) {
                     if (nameOffset >= stringTableSize)
                         return false;
@@ -847,16 +894,23 @@ bool XEXImage::parseOptionalHeaders(const uint8_t* data, size_t size) {
                 if (!terminator)
                     return false;
 
-                m_libraryNames.emplace_back(stringTable + nameOffset);
+                ImportLibraryRecords library;
+                library.name.assign(stringTable + nameOffset,
+                                    static_cast<const char*>(terminator) - (stringTable + nameOffset));
                 for (uint16_t k = 0; k < libHeader.recordCount; ++k) {
                     uint32_t record;
 
-                    if (imports.tell() > end || end - imports.tell() < 4 || !imports.read(&record, 4))
+                    if (imports.tell() > libraryEnd || libraryEnd - imports.tell() < 4
+                        || !imports.read(&record, 4))
                         return false;
 
                     swap32(&record);
-                    m_importRecords.push_back(record);
+                    library.addresses.push_back(record);
                 }
+                m_importLibraries.push_back(std::move(library));
+
+                if (!imports.seek(libraryEnd))
+                    return false;
             }
         } break;
 

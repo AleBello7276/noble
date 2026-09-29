@@ -1,8 +1,10 @@
 #pragma once
 #include <atomic>
+#include <array>
 #include <stdint.h>
 
 #include "KObject.h"
+#include "KProcess.h"
 #include "cpu/PpcContext.h"
 
 enum class ThreadState : uint8_t {
@@ -40,6 +42,7 @@ public:
     GuestAddress mStackBase = 0;
     GuestAddress mStackLimit = 0;
     GuestAddress tls_address = 0;
+    std::array<uint32_t, KProcess::TLS_SLOT_COUNT> mTlsValues{};
 
 public:
     ThreadState mState = ThreadState::Created;

@@ -170,8 +170,11 @@ private:
     std::vector<XEXBasicCompressionBlock> m_compressionBlocks;
     std::vector<XEXSection> m_xexSections;
 
-    std::vector<std::string> m_libraryNames;
-    std::vector<uint32_t> m_importRecords;
+    struct ImportLibraryRecords {
+        std::string name;
+        std::vector<uint32_t> addresses;
+    };
+    std::vector<ImportLibraryRecords> m_importLibraries;
 
     std::vector<std::unique_ptr<Section>> m_sections;
     std::vector<std::unique_ptr<Import>> m_imports;

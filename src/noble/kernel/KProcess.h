@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <bitset>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -29,6 +30,7 @@ using GuestAddress = uint32_t;
 
 class KProcess final : public KernelObject {
 public:
+    static constexpr size_t TLS_SLOT_COUNT = 2048;
     explicit KProcess(uint32_t id);
     ~KProcess();
 
@@ -50,6 +52,7 @@ private:
     uint32_t exit_code_ = 0;
 
     std::vector<std::unique_ptr<KThread>> threads_;
+    std::bitset<TLS_SLOT_COUNT> tlsSlots_{};
 
 public:
     HandleTable handles;
