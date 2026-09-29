@@ -100,7 +100,7 @@ void PPCModule::BuildFunctionCFG(XLoader::Section* text) {
             uint32_t raw;
             std::memcpy(&raw, secData + offset, sizeof(raw));
 
-            codec::Ins inst{bswap32(raw)};
+            codec::Ins inst{byte_swap(raw)};
 
             const bool directBranch
                 = (inst.is_unconditional_branch() || inst.is_conditional_branch()) && !inst.field_lk();
@@ -199,7 +199,7 @@ void PPCModule::AnalyseTEXT(XLoader::Section* text) {
     std::unordered_set<GuestAddress> entries;
 
     for (GuestAddress address = start; address < end; address += 4) {
-        uint32_t data = bswap32(*(uint32_t*)(secDataPtr + (address - start)));
+        uint32_t data = byte_swap(*(uint32_t*)(secDataPtr + (address - start)));
 
         codec::Ins inst(data);
 
@@ -236,8 +236,8 @@ void PPCModule::AnalyseTEXT(XLoader::Section* text) {
         // funcCount++;
 
         for (;;) {
-            uint32_t data = bswap32(*(uint32_t*)(secDataPtr + (address - start)));
-            uint32_t dataAhead = bswap32(*(uint32_t*)(secDataPtr + (address + 4 - start)));
+            uint32_t data = byte_swap(*(uint32_t*)(secDataPtr + (address - start)));
+            uint32_t dataAhead = byte_swap(*(uint32_t*)(secDataPtr + (address + 4 - start)));
             codec::Ins inst = codec::Ins(data);
             codec::Ins instAhead = codec::Ins(dataAhead);
 

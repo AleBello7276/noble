@@ -36,6 +36,7 @@ set(Cpu
 
 set(Kernel
     noble/kernel/Kernel.cpp
+    noble/kernel/KProcess.cpp
 )
 
 

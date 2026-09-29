@@ -45,7 +45,7 @@ void CraneliftJIT::CompilePPCModule(PPCModule& module) {
         GuestAddress address = funcStart;
 
         for (; address < funcEnd; address += 4) {
-            const codec::Ins inst(bswap32(*memory_.GuestToHostVirtual<uint32_t*>(address)));
+            const codec::Ins inst(byte_swap(*memory_.GuestToHostVirtual<uint32_t*>(address)));
             const codec::Opcode op = inst.op;
 
             InstructionInfo info{.mInst = inst, .mAddress = address};

@@ -29,7 +29,8 @@ using GuestAddress = uint32_t;
 
 class KProcess final : public KernelObject {
 public:
-    explicit KProcess(uint32_t id) : KernelObject(KernelObjectType::KProcess), id_(id) {}
+    explicit KProcess(uint32_t id);
+    ~KProcess();
 
     uint32_t id() const { return id_; }
 

@@ -4,7 +4,7 @@
 #include "Loader/ImageLoader.h"
 #include "Loader/PEImage.h"
 #include "Loader/XEXImage.h"
-#include "core/bswap.h"
+#include "core/byte_swap.h"
 #include "powerpc-rs.h"
 
 using GuestAddress = uint32_t;
@@ -25,8 +25,8 @@ struct PDATAFunc {
     };
 
     void read(PDATAFunc func) {
-        StartAddress = bswap32(func.StartAddress);
-        data = bswap32(func.data);
+        StartAddress = byte_swap(func.StartAddress);
+        data = byte_swap(func.data);
     }
 };
 
