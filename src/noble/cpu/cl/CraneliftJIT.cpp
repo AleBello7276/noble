@@ -18,9 +18,9 @@ void CraneliftJIT::CompilePPCModule(PPCModule& module) {
     using namespace cranelift;
 
     FunctionBuilderContext _builderContext;  // reusable builder context
-    for (auto& [key, funcBounds] : module.funcs_) {
-        const GuestAddress funcStart = funcBounds.mStart;
-        const GuestAddress funcEnd = funcBounds.mEnd;
+    for (auto& [key, bounds] : module.funcs_) {
+        const GuestAddress funcStart = bounds.mStart;
+        const GuestAddress funcEnd = bounds.mEnd;
 
         cranelift::Context funcContext = jit_module_.make_context();
 
@@ -44,25 +44,32 @@ void CraneliftJIT::CompilePPCModule(PPCModule& module) {
 
         GuestAddress address = funcStart;
 
+        // per function / compilation jit block context
+        EmitterContext emitter(bounds, state, base, jit_module_, _builder);
+
         for (; address < funcEnd; address += 4) {
             const codec::Ins inst(byte_swap(*memory_.GuestToHostVirtual<uint32_t*>(address)));
             const codec::Opcode op = inst.op;
 
             InstructionInfo info{.mInst = inst, .mAddress = address};
-            IRFunc irFunc(funcBounds, state, base, jit_module_, _builder);
 
             if (op == PpcOpcode::Illegal) [[unlikely]] {
                 LOG_ERROR("Unknown instruction tried to dispatch. Data: {:08X} Address: {:08X}\n", inst.code,
                           address);
-                cl_illegal_handler(irFunc, info);
+                cl_illegal_handler(emitter, info);
                 return;
             }
 
             const auto i = static_cast<std::size_t>(op);
 
             assert(i < emitter_dispatch_table.size());
-            emitter_dispatch_table[i](irFunc, info);  // dispatch
+            emitter_dispatch_table[i](emitter, info);  // dispatch
+            // emitter.FlushState();
+            // LOG_INFO("{}", funcContext.ir());
         }
+
+        // flush cached register values
+        emitter.FlushState();
     }
 
     return;

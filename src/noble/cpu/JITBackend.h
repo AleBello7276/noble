@@ -7,7 +7,7 @@
 
 #include "emulator/PPCModule.h"
 
-using JITBlock = void (*)(void* MemBase, PPCContext* Context);
+using JITBlock = void (*)(PPCContext* Context, void* MemBase);
 using GuestAddress = uint32_t;
 
 class JITBackend {

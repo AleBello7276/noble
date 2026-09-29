@@ -3,6 +3,17 @@
 #include <array>
 #include <stdint.h>
 
+/*
+    some data structures and type definitions are taken from:
+    https://github.com/xenon-emu/xenon/blob/main/Xenon/Core/XCPU/PPU/PowerPC.h
+*/
+
+// Link Register
+typedef uint64_t LR_t;
+
+// Count Register
+typedef uint64_t CTR_t;
+
 // https://github.com/xenon-emu/xenon/blob/main/Xenon/Base/Vector128.h#L11
 struct alignas(16) Vector128 {
     union {
@@ -71,6 +82,15 @@ union CR {
     };
 };
 
+enum eSPR : uint16_t {
+    LR = 8,
+};
+
+struct SPRState {
+    LR_t LR;
+    CTR_t CTR;
+};
+
 // a Xenon Register File
 struct PPCContext {
     static constexpr size_t GPR_COUNT = 32;
@@ -82,7 +102,7 @@ struct PPCContext {
     Vector128 VRs[VR_COUNT]{};
     CR ControlRegister{};
     uint32_t CIA = 0;
-    uint32_t LR = 0;
+    SPRState SPRs;
 
     /* continue... */
 };

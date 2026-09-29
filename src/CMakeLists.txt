@@ -32,6 +32,7 @@ set(Cpu
     noble/cpu/Scheduler.cpp
     noble/cpu/CpuExecutor.cpp
     noble/cpu/cl/CraneliftJIT.cpp
+    noble/cpu/cl/EmitterContext.cpp
 )
 
 set(Kernel
