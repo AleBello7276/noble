@@ -5,7 +5,6 @@
 // Generated from powerpc 0.4.1 Opcode.
 #ifdef __cplusplus
 enum class PpcOpcode : uint16_t {
-    Illegal = 65535,
     Tdi = 0,
     Twi = 1,
     DcbzL = 2,
@@ -517,6 +516,8 @@ enum class PpcOpcode : uint16_t {
     Fctid = 508,
     Fctidz = 509,
     Fsqrt = 510,
+    Count = 511,
+    Illegal = 65535,
 };
 #else
 typedef uint16_t PpcOpcode;

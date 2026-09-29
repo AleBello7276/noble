@@ -1,6 +1,11 @@
 #include "Logger.h"
 #include "emulator/Emulator.h"
 
+/* -- TODO List: --
+    - Move this list somewhere else nicer.
+    - the Xex/Exe Loader is not endian agnostic, it's not an issue for now but better to keep that in mind.
+*/
+
 int main(int argc, char* argv[]) {
     // if (argc != 2) {
     //     LOG_ERROR("Usage: noble <title.xex>");

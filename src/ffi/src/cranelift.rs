@@ -67,8 +67,44 @@ scalar_type!(cl_type_i16, types::I16);
 scalar_type!(cl_type_i32, types::I32);
 scalar_type!(cl_type_i64, types::I64);
 scalar_type!(cl_type_i128, types::I128);
+scalar_type!(cl_type_f16, types::F16);
 scalar_type!(cl_type_f32, types::F32);
 scalar_type!(cl_type_f64, types::F64);
+scalar_type!(cl_type_f128, types::F128);
+
+#[no_mangle]
+pub extern "C" fn cl_type_int(bits: u16) -> u16 {
+    match Type::int(bits) {
+        Some(value) => raw_type(value),
+        None => { error("unsupported integer width"); 0 }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn cl_type_vector(lane_type: u16, lanes: u32) -> u16 {
+    let lane = ty(lane_type);
+    if !lane.is_int() && !lane.is_float() {
+        error("vector lane must be a scalar integer or float type");
+        return 0;
+    }
+    match lane.by(lanes) {
+        Some(value) if value.is_vector() => raw_type(value),
+        _ => { error("unsupported vector lane count"); 0 }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn cl_type_vector_to_dynamic(fixed_vector_type: u16) -> u16 {
+    let fixed = ty(fixed_vector_type);
+    if !fixed.is_vector() {
+        error("type must be a fixed vector");
+        return 0;
+    }
+    match fixed.vector_to_dynamic() {
+        Some(value) => raw_type(value),
+        None => { error("dynamic vector must be at most 256 bits"); 0 }
+    }
+}
 
 #[no_mangle]
 pub extern "C" fn cl_settings_builder_new() -> *mut settings::Builder {
@@ -235,6 +271,22 @@ pub unsafe extern "C" fn cl_context_verify(context: *const Context, module: *con
         Ok(()) => true,
         Err(e) => { error(e); false }
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn cl_context_display(context: *const Context, buffer: *mut c_char, capacity: usize) -> usize {
+    if context.is_null() || (capacity != 0 && buffer.is_null()) {
+        error("null context or output buffer");
+        return 0;
+    }
+    let text = format!("{}", (*context).func.display());
+    let bytes = text.as_bytes();
+    if capacity != 0 {
+        let count = bytes.len().min(capacity - 1);
+        ptr::copy_nonoverlapping(bytes.as_ptr(), buffer.cast(), count);
+        *buffer.add(count) = 0;
+    }
+    bytes.len() + 1
 }
 
 #[no_mangle]
@@ -652,6 +704,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn scalar_and_vector_types() {
+        assert_eq!(cl_type_int(64), cl_type_i64());
+        assert_eq!(cl_type_int(24), 0);
+        assert_eq!(cl_type_f16(), raw_type(types::F16));
+        assert_eq!(cl_type_f128(), raw_type(types::F128));
+
+        let fixed = cl_type_vector(cl_type_i8(), 16);
+        assert_eq!(fixed, raw_type(types::I8X16));
+        assert_eq!(cl_type_vector_to_dynamic(fixed), raw_type(types::I8X16XN));
+        assert_eq!(cl_type_vector(cl_type_i8(), 3), 0);
+        assert_eq!(cl_type_vector_to_dynamic(cl_type_i8()), 0);
+    }
+
+    #[test]
     fn jit_through_c_entry_points() {
         unsafe {
             let jit_builder = cl_jit_builder_new();
@@ -676,6 +742,11 @@ mod tests {
             cl_ins_return(builder, &sum, 1);
             cl_builder_seal_all_blocks(builder);
             cl_function_builder_finish(builder, module);
+
+            let required = cl_context_display(context, ptr::null_mut(), 0);
+            let mut ir = vec![0i8; required];
+            assert_eq!(cl_context_display(context, ir.as_mut_ptr(), ir.len()), required);
+            assert!(CStr::from_ptr(ir.as_ptr()).to_string_lossy().contains("iadd"));
 
             assert!(cl_context_verify(context, module), "{}", CStr::from_ptr(cl_last_error()).to_string_lossy());
             assert!(cl_module_define_function(module, id, context), "{}", CStr::from_ptr(cl_last_error()).to_string_lossy());

@@ -78,8 +78,16 @@ ClType cl_type_i16(void);
 ClType cl_type_i32(void);
 ClType cl_type_i64(void);
 ClType cl_type_i128(void);
+ClType cl_type_f16(void);
 ClType cl_type_f32(void);
 ClType cl_type_f64(void);
+ClType cl_type_f128(void);
+// return a scalar integer type or zero when the width is unsupported
+ClType cl_type_int(uint16_t bits);
+// return a fixed simd type from a scalar lane type and a power of two lane count
+ClType cl_type_vector(ClType lane_type, uint32_t lanes);
+// convert a fixed vector of at most 256 bits to its dynamic vector type
+ClType cl_type_vector_to_dynamic(ClType fixed_vector_type);
 
 ClSettingsBuilder* cl_settings_builder_new(void);
 void cl_settings_builder_drop(ClSettingsBuilder* builder);
@@ -112,6 +120,9 @@ ClType cl_module_pointer_type(const ClJitModule* module);
 void cl_module_clear_context(const ClJitModule* module, ClContext* context);
 void cl_context_drop(ClContext* context);
 bool cl_context_verify(const ClContext* context, const ClJitModule* module);
+// return the required buffer size including the null terminator and optionally copy the function ir
+// pass a null buffer and zero capacity to query the size
+size_t cl_context_display(const ClContext* context, char* buffer, size_t capacity);
 // Borrowed from context; do not drop or retain after context is cleared/dropped.
 ClSignature* cl_context_signature(ClContext* context);
 ClSignature* cl_module_make_signature(const ClJitModule* module);
