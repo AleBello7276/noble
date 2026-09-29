@@ -67,9 +67,34 @@ void CraneliftJIT::CompilePPCModule(PPCModule& module) {
             // emitter.FlushState();
             // LOG_INFO("{}", funcContext.ir());
         }
-
         // flush cached register values
         emitter.FlushState();
+
+        // close the function / compiled block
+        _builder.ins().return_();
+        _builder.seal_all_blocks();
+        _builder.finish(jit_module_);
+
+#ifdef NOBLE_CRANELIFT_DEBUG
+        emitter.FlushState();
+        LOG_INFO("{}", funcContext.ir());
+#endif
+
+        if (!funcContext.verify(jit_module_))
+            throw std::runtime_error(last_error());
+
+        if (!jit_module_.define_function(funcID, funcContext))
+            throw std::runtime_error(last_error());
+
+        if (!jit_module_.finalize_definitions())
+            throw std::runtime_error(last_error());
+
+        // store the function id, may be needed later
+        functionIds_.try_emplace(funcStart, funcID);
+
+        // get the function
+        const JITBlock compiled = jit_module_.get_finalized_function_as<JITBlock>(funcID);
+        compiledBlocks_.try_emplace(funcStart, std::make_shared<const JITBlock>(compiled));
     }
 
     return;

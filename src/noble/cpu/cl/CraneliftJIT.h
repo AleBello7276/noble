@@ -12,6 +12,10 @@
 #define NOBLE_CRANELIFT_REGISTER_CACHE 1
 #endif
 
+#ifndef NOBLE_CRANELIFT_DEBUG
+#define NOBLE_CRANELIFT_DEBUG 1
+#endif
+
 struct InstructionInfo {
     codec::Ins mInst;
     GuestAddress mAddress;
@@ -111,7 +115,8 @@ private:
     cranelift::JITBuilder jit_builder_;
 
     mutable std::mutex mutex_;
-    // std::unordered_map<GuestAddress, codec::PpcIns> decoded_;
+
     std::unordered_map<GuestAddress, PPCBasicBlock> basicBlocks_;
-    std::unordered_map<GuestAddress, std::shared_ptr<const JITBlock>> blocks_;
+    std::unordered_map<GuestAddress, cranelift::FuncId> functionIds_;
+    std::unordered_map<GuestAddress, std::shared_ptr<const JITBlock>> compiledBlocks_;
 };
