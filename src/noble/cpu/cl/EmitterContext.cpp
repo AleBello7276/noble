@@ -1,4 +1,4 @@
-#include "CraneliftJIT.h"
+#include "EmitterContext.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -6,10 +6,6 @@
 #include <stdexcept>
 
 namespace {
-
-static_assert(sizeof(GPR) == sizeof(std::uint64_t));
-static_assert(sizeof(FPR) == sizeof(double));
-static_assert(offsetof(PPCContext, SPRs) + sizeof(SPRState) <= (std::numeric_limits<std::int32_t>::max)());
 
 constexpr std::int32_t GPROffset(size_t index) {
     return static_cast<std::int32_t>(offsetof(PPCContext, GPRs) + index * sizeof(GPR));
@@ -23,14 +19,9 @@ constexpr std::int32_t SPROffset(size_t struct_offset) {
     return static_cast<std::int32_t>(offsetof(PPCContext, SPRs) + struct_offset);
 }
 
-void CheckSPROffset(size_t offset) {
-    if (offset % sizeof(std::uint64_t) != 0 || offset > sizeof(SPRState) - sizeof(std::uint64_t))
-        throw std::out_of_range("invalid 64 bit spr register offset");
-}
-
 }  // namespace
 
-cranelift::Value EmitterContext::LoadGPR(size_t index) {
+cranelift::Value EmitterContext::load_gpr(size_t index) {
     if (index >= PPCContext::GPR_COUNT)
         throw std::out_of_range("gpr index");
 
@@ -54,7 +45,7 @@ cranelift::Value EmitterContext::LoadGPR(size_t index) {
     return value;
 }
 
-cranelift::Value EmitterContext::StoreGPR(size_t index, cranelift::Value value) {
+cranelift::Value EmitterContext::store_gpr(size_t index, cranelift::Value value) {
     if (index >= PPCContext::GPR_COUNT)
         throw std::out_of_range("gpr index");
 
@@ -69,7 +60,7 @@ cranelift::Value EmitterContext::StoreGPR(size_t index, cranelift::Value value) 
     return value;
 }
 
-cranelift::Value EmitterContext::LoadFPR(size_t index) {
+cranelift::Value EmitterContext::load_fpr(size_t index) {
     if (index >= PPCContext::FPR_COUNT)
         throw std::out_of_range("fpr index");
 
@@ -92,7 +83,7 @@ cranelift::Value EmitterContext::LoadFPR(size_t index) {
     return value;
 }
 
-cranelift::Value EmitterContext::StoreFPR(size_t index, cranelift::Value value) {
+cranelift::Value EmitterContext::store_fpr(size_t index, cranelift::Value value) {
     if (index >= PPCContext::FPR_COUNT)
         throw std::out_of_range("fpr index");
 
@@ -107,9 +98,7 @@ cranelift::Value EmitterContext::StoreFPR(size_t index, cranelift::Value value) 
     return value;
 }
 
-cranelift::Value EmitterContext::LoadSPR(size_t struct_offset) {
-    CheckSPROffset(struct_offset);
-
+cranelift::Value EmitterContext::load_spr(size_t struct_offset) {
 #if NOBLE_CRANELIFT_REGISTER_CACHE
 
     auto& cached = sprCache_[struct_offset];
@@ -126,9 +115,7 @@ cranelift::Value EmitterContext::LoadSPR(size_t struct_offset) {
     return value;
 }
 
-cranelift::Value EmitterContext::StoreSPR(size_t struct_offset, cranelift::Value value) {
-    CheckSPROffset(struct_offset);
-
+cranelift::Value EmitterContext::store_spr(size_t struct_offset, cranelift::Value value) {
 #if NOBLE_CRANELIFT_REGISTER_CACHE
 
     sprCache_[struct_offset] = {value, true};
@@ -141,19 +128,30 @@ cranelift::Value EmitterContext::StoreSPR(size_t struct_offset, cranelift::Value
     return value;
 }
 
-cranelift::Value EmitterContext::LoadSPR(eSPR type) {
+cranelift::Value EmitterContext::load_spr(eSPR type) {
     switch (type) {
+    case eSPR::XER:
+        auto value = load_spr(offsetof(SPRState, XER));
+
+        auto trunc = builder.ins().ireduce(cranelift::types::I32(), value);
+        return trunc;
     case eSPR::LR:
-        return LoadSPR(offsetof(SPRState, LR));
+        return load_spr(offsetof(SPRState, LR));
+    case eSPR::CTR:
+        return load_spr(offsetof(SPRState, CTR));
     default:
         throw std::invalid_argument("unsupported spr number");
     }
 }
 
-cranelift::Value EmitterContext::StoreSPR(eSPR type, cranelift::Value value) {
+cranelift::Value EmitterContext::store_spr(eSPR type, cranelift::Value value) {
     switch (type) {
+    case eSPR::XER:
+        return store_spr(offsetof(SPRState, XER), builder.ins().ireduce(cranelift::types::I32(), value));
     case eSPR::LR:
-        return StoreSPR(offsetof(SPRState, LR), value);
+        return store_spr(offsetof(SPRState, LR), value);
+    case eSPR::CTR:
+        return store_spr(offsetof(SPRState, CTR), value);
     default:
         throw std::invalid_argument("unsupported spr number");
     }
@@ -228,6 +226,7 @@ cranelift::Inst EmitterContext::Branch(cranelift::Value condition, cranelift::Bl
                                        cranelift::Block else_block,
                                        std::span<const cranelift::Value> else_args) {
     FlushState();
+
     return builder.ins().brif(condition, then_block, then_args, else_block, else_args);
 }
 
@@ -249,4 +248,31 @@ cranelift::Inst EmitterContext::CallIndirect(cranelift::SigRef signature, cranel
     const auto inst = builder.ins().call_indirect(signature, callee, args);
     InvalidateState();
     return inst;
+}
+
+cranelift::Value EmitterContext::load_memory(cranelift::Value ea, cranelift::Type load_type) {
+    const cranelift::Value mem = vMemBase;
+    const auto addr = builder.ins().iadd(mem, ea);
+
+    return builder.ins().load(load_type, builder.memflags_new(), addr, 0);
+}
+
+cranelift::Value EmitterContext::load_memory(cranelift::Value base, cranelift::Value offset,
+                                             cranelift::Type load_type) {
+    const auto ea = builder.ins().iadd(base, offset);
+
+    return load_memory(ea, load_type);
+}
+
+void EmitterContext::store_memory(cranelift::Value ea, cranelift::Value value) {
+    const cranelift::Value mem = vMemBase;
+    const auto addr = builder.ins().iadd(mem, ea);
+
+    builder.ins().store(builder.memflags_new(), value, addr, 0);
+}
+
+void EmitterContext::store_memory(cranelift::Value base, cranelift::Value offset, cranelift::Value value) {
+    const auto ea = builder.ins().iadd(base, offset);
+
+    store_memory(ea, value);
 }

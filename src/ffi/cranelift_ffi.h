@@ -200,6 +200,7 @@ ClValue cl_ins_fmul(ClFunctionBuilder* builder, ClValue left, ClValue right);
 ClValue cl_ins_fdiv(ClFunctionBuilder* builder, ClValue left, ClValue right);
 ClValue cl_ins_ineg(ClFunctionBuilder* builder, ClValue value);
 ClValue cl_ins_bnot(ClFunctionBuilder* builder, ClValue value);
+ClValue cl_ins_bswap(ClFunctionBuilder* builder, ClValue value);
 ClValue cl_ins_ireduce(ClFunctionBuilder* builder, ClType type, ClValue value);
 ClValue cl_ins_uextend(ClFunctionBuilder* builder, ClType type, ClValue value);
 ClValue cl_ins_sextend(ClFunctionBuilder* builder, ClType type, ClValue value);

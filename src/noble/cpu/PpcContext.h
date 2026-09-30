@@ -83,17 +83,41 @@ union CR {
 };
 
 enum eSPR : uint16_t {
+    XER = 1,
     LR = 8,
+    CTR = 9,
+};
+
+union uXER {
+    uint32_t hexValue;
+#ifdef __LITTLE_ENDIAN__
+    struct {
+        uint32_t ByteCount : 7;
+        uint32_t R0 : 22;
+        uint32_t CA : 1;
+        uint32_t OV : 1;
+        uint32_t SO : 1;
+    };
+#else
+    struct {
+        uint32_t SO : 1;
+        uint32_t OV : 1;
+        uint32_t CA : 1;
+        uint32_t R0 : 22;
+        uint32_t ByteCount : 7;
+    };
+#endif
 };
 
 struct SPRState {
     LR_t LR;
     CTR_t CTR;
+    uXER XER;
 };
 
 class KThread;
 
-enum class PPCFault : uint32_t { None, UnimplementedImport, HLEFailure };
+enum class PPCFault : uint32_t { None, UnimplementedImport, HLEFailure, UncompiledTarget, MemoryAccess };
 
 // a Xenon Register File
 struct PPCContext {

@@ -1,0 +1,120 @@
+#pragma once
+
+#include "cpu/JITBackend.h"
+#include "cranelift.h"
+#include "emulator/Memory.h"
+
+// set to 0 for a direct load or store on every register access
+#ifndef NOBLE_CRANELIFT_REGISTER_CACHE
+#define NOBLE_CRANELIFT_REGISTER_CACHE 1
+#endif
+
+class CraneliftJIT;
+
+/* all the stuff needed to emit an instruction */
+struct EmitterContext {
+public:
+    EmitterContext(PPCFuncMap ranges, cranelift::Value state, cranelift::Value base,
+                   cranelift::JITModule& jit_, cranelift::FunctionBuilder& builder_,
+                   Memory* memory_ = nullptr, CraneliftJIT* backend_ = nullptr)
+        : mFuncRanges(ranges), vCpuState(state), vMemBase(base), jit(jit_), builder(builder_),
+          memory(memory_), backend(backend_) {}
+
+    bool isBlockInMap(GuestAddress address) { return clBlockMap.contains(address); }
+
+    /* return an i64 Value and load it from the context on first use in this block */
+    cranelift::Value load_gpr(size_t index);
+
+    /* update a cached gpr with an i64 value */
+    cranelift::Value store_gpr(size_t index, cranelift::Value value);
+
+    /* return an f64 value and load it from the context on first use in this block */
+    cranelift::Value load_fpr(size_t index);
+
+    /* update a cached fpr with an f64 value */
+    cranelift::Value store_fpr(size_t index, cranelift::Value value);
+
+    /* read an i64 spr at its register offset within SPRState */
+    cranelift::Value load_spr(size_t struct_offset);
+    cranelift::Value store_spr(size_t struct_offset, cranelift::Value value);
+
+    /* read a named spr as an i64 value from PPCContext */
+    cranelift::Value load_spr(eSPR type);
+    cranelift::Value store_spr(eSPR type, cranelift::Value value);
+
+public:
+    /* flush cached register states to context */
+    void FlushState();
+
+    /* clear cached values after a flush */
+    void InvalidateState();
+
+    /*  these are helpers that wraps cranelift instructions and flush / invalidate
+        the cache when needed */
+    void SwitchToBlock(cranelift::Block block);
+    cranelift::Inst Return();
+    cranelift::Inst Jump(cranelift::Block destination, std::span<const cranelift::Value> args = {});
+    cranelift::Inst Branch(cranelift::Value condition, cranelift::Block then_block,
+                           std::span<const cranelift::Value> then_args, cranelift::Block else_block,
+                           std::span<const cranelift::Value> else_args);
+    cranelift::Inst Call(cranelift::FuncRef function, std::span<const cranelift::Value> args = {});
+
+    /* call a guest function with state and memory base parameters */
+    cranelift::Inst CallGuest(cranelift::FuncRef function);
+
+    cranelift::Inst CallIndirect(cranelift::SigRef signature, cranelift::Value callee,
+                                 std::span<const cranelift::Value> args = {});
+
+public:
+    // const helpers
+    cranelift::Value iconst_zero(cranelift::Type type) { return ins().iconst(type, 0); }
+    cranelift::Value iconst(cranelift::Type type, size_t immediate) { return ins().iconst(type, immediate); }
+    cranelift::Value i8(size_t immediate) { return iconst(cranelift::types::I8(), immediate); }
+    cranelift::Value i16(size_t immediate) { return iconst(cranelift::types::I16(), immediate); }
+    cranelift::Value i32(size_t immediate) { return iconst(cranelift::types::I32(), immediate); }
+    cranelift::Value i64(size_t immediate) { return iconst(cranelift::types::I64(), immediate); }
+
+    cranelift::Value zext(cranelift::Type dest_type, cranelift::Value value) {
+        return ins().uextend(dest_type, value);
+    }
+    cranelift::Value sext(cranelift::Type dest_type, cranelift::Value value) {
+        return ins().sextend(dest_type, value);
+    }
+
+    // load memory - ea
+    cranelift::Value load_memory(cranelift::Value ea, cranelift::Type load_type);
+    // load memory - base + offset
+    cranelift::Value load_memory(cranelift::Value base, cranelift::Value offset, cranelift::Type load_type);
+
+    // store memory - ea
+    void store_memory(cranelift::Value ea, cranelift::Value value);
+    // store memory - base + offset
+    void store_memory(cranelift::Value base, cranelift::Value offset, cranelift::Value value);
+
+    cranelift::InstBuilder ins() { return builder.ins(); }
+
+public:
+    PPCFuncMap mFuncRanges;
+    std::unordered_map<GuestAddress, cranelift::Block> clBlockMap;
+
+    cranelift::Value vCpuState;
+    cranelift::Value vMemBase;
+    cranelift::JITModule& jit;
+    cranelift::FunctionBuilder& builder;
+    cranelift::Value returnAddress = cranelift::INVALID_ID;
+
+    Memory* memory;
+    CraneliftJIT* backend;
+
+private:
+    struct CachedValue {
+        cranelift::Value value = cranelift::INVALID_ID;
+        bool dirty = false;
+    };
+
+#if NOBLE_CRANELIFT_REGISTER_CACHE
+    std::array<CachedValue, PPCContext::GPR_COUNT> gprCache_{};
+    std::array<CachedValue, PPCContext::FPR_COUNT> fprCache_{};
+    std::map<size_t, CachedValue> sprCache_{};
+#endif
+};

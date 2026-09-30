@@ -575,6 +575,7 @@ macro_rules! unary_ins {
 }
 unary_ins!(cl_ins_ineg, ineg);
 unary_ins!(cl_ins_bnot, bnot);
+unary_ins!(cl_ins_bswap, bswap);
 
 #[no_mangle]
 pub unsafe extern "C" fn cl_ins_f32const(builder: *mut FunctionBuilder<'static>, bits: u32) -> u32 {

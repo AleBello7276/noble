@@ -648,6 +648,9 @@ public:
     // invert every bit of an integer value
     Value bnot(Value value) const noexcept { return cl_ins_bnot(builder_, value); }
 
+    // reverse the byte order of an integer value
+    Value bswap(Value value) const noexcept { return cl_ins_bswap(builder_, value); }
+
     // narrow an integer value to the given type
     Value ireduce(Type type, Value value) const noexcept { return cl_ins_ireduce(builder_, type, value); }
 
