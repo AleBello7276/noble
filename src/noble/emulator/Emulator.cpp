@@ -1,7 +1,9 @@
 #include "Emulator.h"
 #include <cstring>
 
-Emulator::Emulator() : mMemory_(), cpu_(mMemory_), mScheduler_(cpu_), mKernel_(mMemory_, mScheduler_) {}
+Emulator::Emulator() : mMemory_(), cpu_(mMemory_), mScheduler_(cpu_), mKernel_(mMemory_, mScheduler_) {
+    cpu_.jit()->SetHLERegistry(&mKernel_.Imports());
+}
 
 Emulator::~Emulator() {
     Shutdown();

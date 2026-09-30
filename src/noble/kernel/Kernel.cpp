@@ -3,13 +3,17 @@
 #include "Logger.h"
 #include "cpu/Scheduler.h"
 #include "emulator/Memory.h"
+#include "hle/Exports.h"
 #include <algorithm>
 
-Kernel::Kernel(Memory& memory, Scheduler& scheduler) : memory_(memory), scheduler_(scheduler) {}
+Kernel::Kernel(Memory& memory, Scheduler& scheduler)
+    : memory_(memory), scheduler_(scheduler), imports_(*this, memory) {}
 
 bool Kernel::Initialize() {
     next_process_id_ = 1;
     next_thread_id_ = 1;
+
+    hle::RegisterExports(imports_);
 
     return true;
 }
@@ -55,6 +59,7 @@ bool Kernel::AllocateThreadStack(KThread& thread, uint32_t size) {
 
 void Kernel::InitializeThreadContext(KThread& thread, const ThreadCreateInfo& info) {
     thread.mContext = {};
+    thread.mContext.HostThread = &thread;
 
     thread.mContext.CIA = info.entry_point;
 
@@ -142,4 +147,55 @@ void Kernel::ExitProcess(KProcess* process, uint32_t exit_code) {
     for (auto& thread : process->threads_) {
         scheduler_.TerminateThread(thread.get(), exit_code);
     }
+}
+
+uint32_t Kernel::AllocateTLS(KThread& thread) {
+    std::lock_guard lock(tlsMutex_);
+    auto* process = thread.process();
+
+    for (size_t index = 0; index < KProcess::TLS_SLOT_COUNT; ++index) {
+        if (!process->tlsSlots_.test(index)) {
+            process->tlsSlots_.set(index);
+            thread.mTlsValues[index] = 0;
+
+            return static_cast<uint32_t>(index);
+        }
+    }
+
+    return UINT32_MAX;
+}
+
+bool Kernel::FreeTLS(KThread& thread, uint32_t index) {
+    std::lock_guard lock(tlsMutex_);
+
+    auto* process = thread.process();
+
+    if (index >= KProcess::TLS_SLOT_COUNT || !process->tlsSlots_.test(index))
+        return false;
+
+    for (auto& processThread : process->threads_)
+        processThread->mTlsValues[index] = 0;
+
+    process->tlsSlots_.reset(index);
+
+    return true;
+}
+
+uint32_t Kernel::GetTLSValue(KThread& thread, uint32_t index) {
+    std::lock_guard lock(tlsMutex_);
+
+    if (index >= KProcess::TLS_SLOT_COUNT || !thread.process()->tlsSlots_.test(index))
+        return 0;
+
+    return thread.mTlsValues[index];
+}
+
+bool Kernel::SetTLSValue(KThread& thread, uint32_t index, uint32_t value) {
+    std::lock_guard lock(tlsMutex_);
+
+    if (index >= KProcess::TLS_SLOT_COUNT || !thread.process()->tlsSlots_.test(index))
+        return false;
+
+    thread.mTlsValues[index] = value;
+    return true;
 }

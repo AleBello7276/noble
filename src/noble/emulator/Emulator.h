@@ -22,9 +22,9 @@ public:
 
 private:
     Memory mMemory_;
+    CpuExecutor cpu_;
     Scheduler mScheduler_;
     Kernel mKernel_;
-    CpuExecutor cpu_;
 
     PPCModule mStartModule;
     KProcess* mTitleProcess_ = nullptr;

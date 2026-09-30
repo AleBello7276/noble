@@ -91,6 +91,10 @@ struct SPRState {
     CTR_t CTR;
 };
 
+class KThread;
+
+enum class PPCFault : uint32_t { None, UnimplementedImport, HLEFailure };
+
 // a Xenon Register File
 struct PPCContext {
     static constexpr size_t GPR_COUNT = 32;
@@ -103,6 +107,11 @@ struct PPCContext {
     CR ControlRegister{};
     uint32_t CIA = 0;
     SPRState SPRs;
+
+    // retain host execution metadata outside the guest architectural register file
+    KThread* HostThread = nullptr;
+    PPCFault Fault = PPCFault::None;
+    uint32_t FaultAddress = 0;
 
     /* continue... */
 };

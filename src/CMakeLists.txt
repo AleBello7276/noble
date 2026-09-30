@@ -38,6 +38,9 @@ set(Cpu
 set(Kernel
     noble/kernel/Kernel.cpp
     noble/kernel/KProcess.cpp
+    noble/kernel/hle/Shims.cpp
+    noble/kernel/hle/Exports.cpp
+    noble/kernel/hle/krnl/Threading.cpp
 )
 
 

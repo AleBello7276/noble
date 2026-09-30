@@ -107,12 +107,20 @@ public:
 
     void InvalidateRegion(GuestAddress from, GuestAddress to) override;
 
-    JITBlock FindBlock(GuestAddress address) const;
+    JITBlock FindBlock(GuestAddress address) const override;
+
+    void SetHLERegistry(hle::Registry* registry) override;
+
+    cranelift::FuncId FindFunctionId(GuestAddress address) const;
 
 private:
     Memory& memory_;
     cranelift::JITModule jit_module_;
     cranelift::JITBuilder jit_builder_;
+    hle::Registry* imports_ = nullptr;
+    std::unordered_map<GuestAddress, XLoader::Import> importsByAddress_;
+
+    void CompileImport(const XLoader::Import& import);
 
     mutable std::mutex mutex_;
 

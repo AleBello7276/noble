@@ -10,9 +10,19 @@
 using JITBlock = void (*)(PPCContext* Context, void* MemBase);
 using GuestAddress = uint32_t;
 
+namespace hle {
+class Registry;
+}
+
 class JITBackend {
 public:
     virtual ~JITBackend() = default;
+
+    // attach the host import registry before compiling guest functions
+    virtual void SetHLERegistry(hle::Registry* registry) = 0;
+
+    /* get a compiled block from guest entry address */
+    virtual JITBlock FindBlock(GuestAddress address) const = 0;
 
     /* jit all blocks in a PPCModule which does function bound analysis and simple cfg at load */
     virtual void CompilePPCModule(PPCModule& module) = 0;

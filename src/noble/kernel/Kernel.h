@@ -6,6 +6,8 @@
 
 #include "KProcess.h"
 #include "KThread.h"
+#include "hle/Shims.h"
+#include <mutex>
 
 class Memory;
 class Scheduler;
@@ -49,6 +51,17 @@ public:
     KThread* CurrentThread();
     KProcess* CurrentProcess();
 
+    // expose the import registry whose lifetime covers compiled hle wrappers
+    hle::Registry& Imports() { return imports_; }
+    // allocate a process tls index and initialize the calling thread value
+    uint32_t AllocateTLS(KThread& thread);
+    // release a process tls index and clear that slot in every thread
+    bool FreeTLS(KThread& thread, uint32_t index);
+    // read the calling thread value for an allocated tls index
+    uint32_t GetTLSValue(KThread& thread, uint32_t index);
+    // update the calling thread value for an allocated tls index
+    bool SetTLSValue(KThread& thread, uint32_t index, uint32_t value);
+
 private:
     void InitializeThreadContext(KThread& thread, const ThreadCreateInfo& info);
 
@@ -57,6 +70,8 @@ private:
 private:
     Memory& memory_;
     Scheduler& scheduler_;
+    hle::Registry imports_;
+    std::mutex tlsMutex_;
 
     uint32_t next_process_id_ = 1;
     uint32_t next_thread_id_ = 1;
