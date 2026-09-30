@@ -148,54 +148,6 @@ void CraneliftJIT::CompilePPCModule(PPCModule& module) {
         const JITBlock compiled = jit_module_.get_finalized_function_as<JITBlock>(funcID);
         compiledBlocks_.try_emplace(funcStart, std::make_shared<const JITBlock>(compiled));
     }
-
-    return;
-
-    cranelift::Context context = jit_module_.make_context();
-
-    cranelift::Signature signature = context.signature();
-    signature.push_param(cranelift::types::I64());
-
-    cranelift::FuncId id = jit_module_.declare_function("add_two", CL_LINKAGE_EXPORT, signature);
-
-    assert(id != INVALID_ID);
-
-    FunctionBuilderContext builder_context;
-    {
-        FunctionBuilder builder{context, builder_context};
-
-        Block entry = builder.create_block();
-        builder.append_block_params_for_function_params(entry);
-        builder.switch_to_block(entry);
-
-        Value input = builder.block_param(entry, 0);
-        Value two = builder.ins().iconst(types::I64(), 2);
-        Value sum = builder.ins().iadd(input, two);
-
-        std::array<Value, 1> returns{sum};
-        builder.ins().return_(returns);
-
-        builder.seal_all_blocks();
-        builder.finish(jit_module_);
-    }
-
-    LOG_INFO("{}", context.ir());
-
-    if (!context.verify(jit_module_))
-        throw std::runtime_error(last_error());
-
-    if (!jit_module_.define_function(id, context))
-        throw std::runtime_error(last_error());
-
-    if (!jit_module_.finalize_definitions())
-        throw std::runtime_error(last_error());
-
-    using Function = std::int64_t (*)(std::int64_t);
-    const Function function = jit_module_.get_finalized_function_as<Function>(id);
-
-    int a = function(40);
-
-    void();
 }
 
 void CraneliftJIT::SetHLERegistry(hle::Registry* registry) {
