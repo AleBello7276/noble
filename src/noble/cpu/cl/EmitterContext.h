@@ -93,9 +93,27 @@ public:
 
     cranelift::InstBuilder ins() { return builder.ins(); }
 
+    void comment(cranelift::Inst instruction, std::string text) {
+        builder.comment(instruction, std::move(text));
+    }
+    bool comment(std::string text) { return builder.comment(std::move(text)); }
+
 public:
     PPCFuncMap mFuncRanges;
     std::unordered_map<GuestAddress, cranelift::Block> clBlockMap;
+
+    cranelift::Block BlockLookup(GuestAddress address) {
+        if (address < mFuncRanges.mStart || address >= mFuncRanges.mEnd)
+            return cranelift::INVALID_ID;
+
+        if (clBlockMap.contains(address))
+            return clBlockMap.at(address);
+
+        cranelift::Block new_block = builder.create_block();
+        clBlockMap.try_emplace(address, new_block);
+
+        return new_block;
+    }
 
     cranelift::Value vCpuState;
     cranelift::Value vMemBase;

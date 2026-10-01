@@ -9,10 +9,12 @@ inline constexpr auto emitter_dispatch_table = [] {
     table.fill(&cl_illegal_handler);  // init
 
     table[to_underlying(PpcOpcode::Mfspr)] = &cl_mfspr_handler;
+    table[to_underlying(PpcOpcode::Mtspr)] = &cl_mtspr_handler;
+
     table[to_underlying(PpcOpcode::B)] = &cl_b_handler;
-    table[to_underlying(PpcOpcode::Bc)] = &cl_bc_handler;
-    table[to_underlying(PpcOpcode::Bclr)] = &cl_bclr_handler;
-    table[to_underlying(PpcOpcode::Bcctr)] = &cl_bcctr_handler;
+
+    table[to_underlying(PpcOpcode::Addis)] = &cl_addis_handler;
+    table[to_underlying(PpcOpcode::Or)] = &cl_or__handler;
 
     // byte load/store
     table[to_underlying(PpcOpcode::Lbz)] = &cl_lbz_handler;
@@ -53,8 +55,6 @@ inline constexpr auto emitter_dispatch_table = [] {
     table[to_underlying(PpcOpcode::Stdu)] = &cl_stdu_handler;
     table[to_underlying(PpcOpcode::Stdx)] = &cl_stdx_handler;
     table[to_underlying(PpcOpcode::Stdux)] = &cl_stdux_handler;
-
-    table[to_underlying(PpcOpcode::Mtspr)] = &cl_mtspr_handler;
 
     return table;
 }();

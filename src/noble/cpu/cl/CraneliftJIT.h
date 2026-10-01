@@ -18,6 +18,13 @@ struct InstructionInfo {
     GuestAddress mAddress;
 };
 
+struct JITFunction {
+    GuestAddress mStartAddress;
+    GuestAddress mEndAddress;
+
+    cranelift::FuncId m_id;
+};
+
 class CraneliftJIT final : public JITBackend {
 public:
     explicit CraneliftJIT(Memory& memory);
@@ -34,7 +41,7 @@ public:
 
     void SetHLERegistry(hle::Registry* registry) override;
 
-    cranelift::FuncId FindFunctionId(GuestAddress address) const;
+    JITFunction LookupFunction(GuestAddress address);
 
 private:
     Memory& memory_;
@@ -46,8 +53,8 @@ private:
     void CompileImport(const XLoader::Import& import);
 
     mutable std::mutex mutex_;
+    mutable std::mutex funcMutex_;
 
-    std::unordered_map<GuestAddress, PPCBasicBlock> basicBlocks_;
-    std::unordered_map<GuestAddress, cranelift::FuncId> functionIds_;
+    std::unordered_map<GuestAddress, JITFunction> functions_;
     std::unordered_map<GuestAddress, std::shared_ptr<const JITBlock>> compiledBlocks_;
 };

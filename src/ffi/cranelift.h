@@ -394,18 +394,42 @@ public:
 
     // return a snapshot of the current function ir for debugging before or after finish
     std::string ir() const {
-        const std::size_t required = cl_context_display(raw(), nullptr, 0);
+        std::vector<ClIRComment> comments;
+        for (const auto& comment : comments_)
+            comments.push_back({comment.instruction, comment.block, comment.text.c_str()});
+
+        const std::size_t required
+            = cl_context_display_with_comments(raw(), comments.data(), comments.size(), nullptr, 0);
+
         if (required == 0)
             return {};
+
         std::string result(required, '\0');
-        if (cl_context_display(raw(), result.data(), result.size()) == 0)
+        if (cl_context_display_with_comments(raw(), comments.data(), comments.size(), result.data(),
+                                             result.size())
+            == 0)
             return {};
         result.pop_back();
         return result;
     }
 
+    // Attach a display-only comment to an instruction in this function.
+    void comment(Inst instruction, std::string text) {
+        comments_.push_back({instruction, INVALID_ID, std::move(text)});
+    }
+    void comment_at(Block block, Inst previous, std::string text) {
+        comments_.push_back({previous, block, std::move(text)});
+    }
+    void clear_comments() noexcept { comments_.clear(); }
+
 private:
     detail::Owned<ClContext, cl_context_drop> handle_;
+    struct Comment {
+        Inst instruction;
+        Block block;
+        std::string text;
+    };
+    std::vector<Comment> comments_;
 };
 
 class DataDescription {
@@ -475,7 +499,10 @@ public:
     Type pointer_type() const noexcept { return cl_module_pointer_type(raw()); }
 
     // clear a codegen context for another function after its builder has finished
-    void clear_context(Context& context) const noexcept { cl_module_clear_context(raw(), context.raw()); }
+    void clear_context(Context& context) const noexcept {
+        cl_module_clear_context(raw(), context.raw());
+        context.clear_comments();
+    }
 
     // create a signature with the module calling convention
     Signature make_signature() const noexcept { return Signature(cl_module_make_signature(raw()), true); }
@@ -751,7 +778,17 @@ public:
     // keep both contexts alive until finish consumes this builder
     // borrow a codegen context and reusable builder context to build one function
     FunctionBuilder(Context& context, FunctionBuilderContext& builder_context) noexcept
-        : handle_(cl_function_builder_new(context.raw(), builder_context.raw())) {}
+        : handle_(cl_function_builder_new(context.raw(), builder_context.raw())), context_(&context) {}
+
+    void comment(Inst instruction, std::string text) { context_->comment(instruction, std::move(text)); }
+    bool comment(std::string text) {
+        Block block;
+        Inst previous;
+        if (!cl_builder_comment_position(raw(), &block, &previous))
+            return false;
+        context_->comment_at(block, previous, std::move(text));
+        return true;
+    }
 
     // return the underlying function builder without transferring ownership
     ClFunctionBuilder* raw() const noexcept { return handle_.get(); }
@@ -835,6 +872,7 @@ public:
 
 private:
     detail::Owned<ClFunctionBuilder, cl_function_builder_drop> handle_;
+    Context* context_;
 };
 
 }  // namespace cranelift

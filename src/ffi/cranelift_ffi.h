@@ -123,6 +123,17 @@ bool cl_context_verify(const ClContext* context, const ClJitModule* module);
 // return the required buffer size including the null terminator and optionally copy the function ir
 // pass a null buffer and zero capacity to query the size
 size_t cl_context_display(const ClContext* context, char* buffer, size_t capacity);
+
+typedef struct ClIRComment {
+    uint32_t instruction;
+    uint32_t block;  // INVALID means before instruction; otherwise after instruction in block.
+    const char* text;
+} ClIRComment;
+
+bool cl_builder_comment_position(const ClFunctionBuilder* builder, uint32_t* block, uint32_t* instruction);
+size_t cl_context_display_with_comments(const ClContext* context, const ClIRComment* comments, size_t count,
+                                        char* buffer, size_t capacity);
+
 // Borrowed from context; do not drop or retain after context is cleared/dropped.
 ClSignature* cl_context_signature(ClContext* context);
 ClSignature* cl_module_make_signature(const ClJitModule* module);

@@ -130,11 +130,11 @@ cranelift::Value EmitterContext::store_spr(size_t struct_offset, cranelift::Valu
 
 cranelift::Value EmitterContext::load_spr(eSPR type) {
     switch (type) {
-    case eSPR::XER:
+    case eSPR::XER: {
         auto value = load_spr(offsetof(SPRState, XER));
-
         auto trunc = builder.ins().ireduce(cranelift::types::I32(), value);
         return trunc;
+    }
     case eSPR::LR:
         return load_spr(offsetof(SPRState, LR));
     case eSPR::CTR:

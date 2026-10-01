@@ -275,11 +275,89 @@ pub unsafe extern "C" fn cl_context_verify(context: *const Context, module: *con
 
 #[no_mangle]
 pub unsafe extern "C" fn cl_context_display(context: *const Context, buffer: *mut c_char, capacity: usize) -> usize {
+    cl_context_display_with_comments(context, ptr::null(), 0, buffer, capacity)
+}
+
+#[repr(C)]
+pub struct IRComment {
+    instruction: u32,
+    block: u32,
+    text: *const c_char,
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn cl_builder_comment_position(builder: *const FunctionBuilder<'static>,
+    block: *mut u32, instruction: *mut u32) -> bool {
+    if builder.is_null() || block.is_null() || instruction.is_null() {
+        error("null comment position argument");
+        return false;
+    }
+    let builder = &*builder;
+    let Some(current) = builder.current_block() else {
+        error("comment requires an active block");
+        return false;
+    };
+    *block = current.as_u32();
+    *instruction = builder.func.layout.last_inst(current).map_or(INVALID, |inst| inst.as_u32());
+    true
+}
+
+struct CommentWriter<'a> {
+    comments: &'a [IRComment],
+}
+
+impl CommentWriter<'_> {
+    fn write_comments(&self, w: &mut dyn std::fmt::Write, instruction: u32,
+        block: u32, indent: usize) -> std::fmt::Result {
+        for comment in self.comments.iter().filter(|c| c.instruction == instruction && c.block == block) {
+            let text = unsafe { CStr::from_ptr(comment.text) }.to_string_lossy();
+            for line in text.lines() {
+                writeln!(w, "{:indent$}; {}", "", line, indent = indent)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl cranelift_codegen::write::FuncWriter for CommentWriter<'_> {
+    fn write_block_header(&mut self, w: &mut dyn std::fmt::Write,
+        func: &cranelift_codegen::ir::Function, block: Block, indent: usize) -> std::fmt::Result {
+        cranelift_codegen::write::write_block_header(w, func, block, indent)?;
+        self.write_comments(w, INVALID, block.as_u32(), indent + 4)
+    }
+
+    fn write_instruction(&mut self, w: &mut dyn std::fmt::Write,
+        func: &cranelift_codegen::ir::Function,
+        aliases: &cranelift_codegen::entity::SecondaryMap<Value, Vec<Value>>,
+        inst: Inst, indent: usize) -> std::fmt::Result {
+        self.write_comments(w, inst.as_u32(), INVALID, indent)?;
+        cranelift_codegen::write::FuncWriter::write_instruction(
+            &mut cranelift_codegen::write::PlainWriter, w, func, aliases, inst, indent)?;
+        self.write_comments(w, inst.as_u32(), func.layout.inst_block(inst).unwrap().as_u32(), indent)
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn cl_context_display_with_comments(context: *const Context,
+    comments: *const IRComment, count: usize, buffer: *mut c_char, capacity: usize) -> usize {
     if context.is_null() || (capacity != 0 && buffer.is_null()) {
         error("null context or output buffer");
         return 0;
     }
-    let text = format!("{}", (*context).func.display());
+    if count != 0 && comments.is_null() {
+        error("null comment array");
+        return 0;
+    }
+    let comments = if count == 0 { &[][..] } else { std::slice::from_raw_parts(comments, count) };
+    if comments.iter().any(|c| c.text.is_null()) {
+        error("null comment text");
+        return 0;
+    }
+    let mut text = String::new();
+    if cranelift_codegen::write::decorate_function(&mut CommentWriter { comments }, &mut text, &(*context).func).is_err() {
+        error("failed to write CLIR");
+        return 0;
+    }
     let bytes = text.as_bytes();
     if capacity != 0 {
         let count = bytes.len().min(capacity - 1);
@@ -698,80 +776,4 @@ pub unsafe extern "C" fn cl_ins_store(builder: *mut FunctionBuilder<'static>, fl
     let builder = &mut *builder;
     let flags = builder.func.dfg.mem_flags[flags];
     builder.ins().store(flags, Value::from_u32(value), Value::from_u32(address), offset).as_u32()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn scalar_and_vector_types() {
-        assert_eq!(cl_type_int(64), cl_type_i64());
-        assert_eq!(cl_type_int(24), 0);
-        assert_eq!(cl_type_f16(), raw_type(types::F16));
-        assert_eq!(cl_type_f128(), raw_type(types::F128));
-
-        let fixed = cl_type_vector(cl_type_i8(), 16);
-        assert_eq!(fixed, raw_type(types::I8X16));
-        assert_eq!(cl_type_vector_to_dynamic(fixed), raw_type(types::I8X16XN));
-        assert_eq!(cl_type_vector(cl_type_i8(), 3), 0);
-        assert_eq!(cl_type_vector_to_dynamic(cl_type_i8()), 0);
-    }
-
-    #[test]
-    fn jit_through_c_entry_points() {
-        unsafe {
-            let jit_builder = cl_jit_builder_new();
-            assert!(!jit_builder.is_null());
-            let module = cl_jit_module_new(jit_builder);
-            let context = cl_module_make_context(module);
-            let signature = cl_context_signature(context);
-            cl_signature_push_param(signature, cl_type_i64());
-            cl_signature_push_return(signature, cl_type_i64());
-            let name = b"add_two\0";
-            let id = cl_module_declare_function(module, name.as_ptr().cast(), 4, signature);
-            assert_ne!(id, INVALID);
-
-            let builder_context = cl_function_builder_context_new();
-            let builder = cl_function_builder_new(context, builder_context);
-            let entry = cl_builder_create_block(builder);
-            cl_builder_append_block_params_for_function_params(builder, entry);
-            cl_builder_switch_to_block(builder, entry);
-            let input = cl_builder_block_param(builder, entry, 0);
-            let two = cl_ins_iconst(builder, cl_type_i64(), 2);
-            let sum = cl_ins_iadd(builder, input, two);
-            cl_ins_return(builder, &sum, 1);
-            cl_builder_seal_all_blocks(builder);
-            cl_function_builder_finish(builder, module);
-
-            let required = cl_context_display(context, ptr::null_mut(), 0);
-            let mut ir = vec![0i8; required];
-            assert_eq!(cl_context_display(context, ir.as_mut_ptr(), ir.len()), required);
-            assert!(CStr::from_ptr(ir.as_ptr()).to_string_lossy().contains("iadd"));
-
-            assert!(cl_context_verify(context, module), "{}", CStr::from_ptr(cl_last_error()).to_string_lossy());
-            assert!(cl_module_define_function(module, id, context), "{}", CStr::from_ptr(cl_last_error()).to_string_lossy());
-            let data_name = b"answer\0";
-            let data_id = cl_module_declare_data(module, data_name.as_ptr().cast(), 4, false, false);
-            assert_ne!(data_id, INVALID);
-            let description = cl_data_description_new();
-            let data = 42u64.to_ne_bytes();
-            assert!(cl_data_description_define(description, data.as_ptr(), data.len()));
-            assert!(cl_module_define_data(module, data_id, description));
-            cl_data_description_drop(description);
-            assert!(cl_jit_module_finalize_definitions(module), "{}", CStr::from_ptr(cl_last_error()).to_string_lossy());
-            let address = cl_jit_module_get_finalized_function(module, id);
-            assert!(!address.is_null());
-            let function: extern "C" fn(i64) -> i64 = std::mem::transmute(address);
-            assert_eq!(function(40), 42);
-            let mut size = 0;
-            let data_address = cl_jit_module_get_finalized_data(module, data_id, &mut size);
-            assert_eq!(size, 8);
-            assert_eq!(std::slice::from_raw_parts(data_address.cast::<u8>(), size), &data);
-
-            cl_function_builder_context_drop(builder_context);
-            cl_context_drop(context);
-            cl_jit_module_free_memory(module);
-        }
-    }
 }

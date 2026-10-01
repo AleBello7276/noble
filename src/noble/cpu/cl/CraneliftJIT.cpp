@@ -82,13 +82,19 @@ void CraneliftJIT::CompilePPCModule(PPCModule& module) {
         Value base = _builder.block_param(entry, 1);
 
         // per function / compilation jit block context
-        EmitterContext emitter(bounds, state, base, jit_module_, _builder);
+        EmitterContext emitter(bounds, state, base, jit_module_, _builder, &memory_, this);
 
         // if this function is an import call into hle
         if (importsByAddress_.contains(funcStart)) {
-            const FuncRef target = _builder.declare_func_in_func(jit_module_, functionIds_.at(funcStart));
+            const FuncRef target = _builder.declare_func_in_func(jit_module_, functions_.at(funcStart).m_id);
             emitter.CallGuest(target);
-            break;
+            continue;
+        }
+
+        // add all block edges labels
+        for (auto block : bounds.bbs_) {
+            emitter.BlockLookup(block.mStartAddress);
+            continue;
         }
 
         GuestAddress address = funcStart;
@@ -97,6 +103,11 @@ void CraneliftJIT::CompilePPCModule(PPCModule& module) {
             const codec::Opcode op = inst.op;
 
             InstructionInfo info{.mInst = inst, .mAddress = address};
+
+            // if the current address is start of a block, switch to it
+            if (emitter.clBlockMap.contains(address)) {
+                emitter.builder.switch_to_block(emitter.BlockLookup(address));
+            }
 
             if (op == PpcOpcode::Illegal) [[unlikely]] {
                 LOG_ERROR("Unknown instruction tried to dispatch. Data: {:08X} Address: {:08X}\n", inst.code,
@@ -118,6 +129,15 @@ void CraneliftJIT::CompilePPCModule(PPCModule& module) {
 #endif
 
             emitter_dispatch_table[i](emitter, info);  // dispatch
+
+            // if next address a start of a new block, add a fall through jump to it
+            if (emitter.clBlockMap.contains(address + 4)) {
+                emitter.ins().jump(emitter.BlockLookup(address + 4));
+            }
+
+#ifdef NOBLE_CRANELIFT_DEBUG
+            LOG_INFO("{}", funcContext.ir());
+#endif
             continue;
         }
         // flush cached register values
@@ -142,7 +162,7 @@ void CraneliftJIT::CompilePPCModule(PPCModule& module) {
             throw std::runtime_error(last_error());
 
         // store the function id, may be needed later
-        functionIds_.try_emplace(funcStart, funcID);
+        // functionIds_.try_emplace(funcStart, funcID);
 
         // get the function
         const JITBlock compiled = jit_module_.get_finalized_function_as<JITBlock>(funcID);
@@ -225,7 +245,8 @@ void CraneliftJIT::CompileImport(const XLoader::Import& import) {
         || !jit_module_.finalize_definitions())
         throw std::runtime_error(last_error());
 
-    functionIds_.emplace(import.funcImportAddr, id);
+    JITFunction func = {.mStartAddress = import.funcImportAddr, .m_id = id};
+    functions_.emplace(import.funcImportAddr, func);
     const auto function = jit_module_.get_finalized_function_as<JITBlock>(id);
 
     compiledBlocks_.emplace(import.funcImportAddr, std::make_shared<const JITBlock>(function));
@@ -250,9 +271,29 @@ JITBlock CraneliftJIT::FindBlock(GuestAddress address) const {
     return it != compiledBlocks_.end() ? *it->second : nullptr;
 }
 
-cranelift::FuncId CraneliftJIT::FindFunctionId(GuestAddress address) const {
-    std::lock_guard lock(mutex_);
+JITFunction CraneliftJIT::LookupFunction(GuestAddress address) {
+    std::lock_guard lock(funcMutex_);
 
-    const auto it = functionIds_.find(address);
-    return it != functionIds_.end() ? it->second : cranelift::INVALID_ID;
+    if (functions_.contains(address))
+        return functions_.at(address);
+
+    // create function id for address
+
+    /* jitted guest entry prototpype is void <>(PPCContext* state, void* mem_base) */
+    // Own the signature: a signature borrowed from a temporary Context dangles
+    // as soon as that Context is destroyed at the end of the statement.
+    cranelift::Signature funcSig = jit_module_.make_signature();
+    funcSig.push_param(cranelift::types::Pointer(jit_module_));
+    funcSig.push_param(cranelift::types::Pointer(jit_module_));
+
+    std::string name = std::format("{:08X}", address);
+    cranelift::FuncId funcID = jit_module_.declare_function(name.c_str(), CL_LINKAGE_EXPORT, funcSig);
+
+    if (funcID == cranelift::INVALID_ID)
+        throw std::runtime_error(cranelift::last_error());
+
+    JITFunction jf = {.mStartAddress = address, .mEndAddress = 0, .m_id = funcID};
+    functions_.try_emplace(address, jf);
+
+    return jf;
 }
