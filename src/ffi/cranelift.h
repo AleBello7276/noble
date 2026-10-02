@@ -588,6 +588,9 @@ inline bool Context::verify(const JITModule& module) const noexcept {
 
 class InstBuilder {
 public:
+    // Emit a CLIR nop (does not generate a machine code nop).
+    Inst nop() const noexcept { return cl_ins_nop(builder_); }
+
     // borrow the active function builder for instruction insertion
     explicit InstBuilder(ClFunctionBuilder* builder) noexcept : builder_(builder) {}
 
@@ -674,6 +677,15 @@ public:
 
     // invert every bit of an integer value
     Value bnot(Value value) const noexcept { return cl_ins_bnot(builder_, value); }
+
+    // count leading zero bits with a result of the same type and the input bit width for zero
+    Value clz(Value value) const noexcept { return cl_ins_clz(builder_, value); }
+
+    // count trailing zero bits with a result of the same type and the input bit width for zero
+    Value ctz(Value value) const noexcept { return cl_ins_ctz(builder_, value); }
+
+    // count set bits with a result of the same type as the input
+    Value popcnt(Value value) const noexcept { return cl_ins_popcnt(builder_, value); }
 
     // reverse the byte order of an integer value
     Value bswap(Value value) const noexcept { return cl_ins_bswap(builder_, value); }

@@ -239,3 +239,22 @@ inline void emit_store_indexed(EmitterContext& e_, InstructionInfo& info_) {
     if constexpr (Update)
         e_.store_gpr(ra, ea);
 }
+
+// from xenon
+constexpr uint64_t PPCMASK(uint64_t mb, uint64_t me) {
+    const uint64_t mask = ~0ULL << (~(me - mb) & 63);
+    return (mask >> (mb & 63)) | (mask << ((64 - mb) & 63));
+}
+
+// from xenia
+static inline bool InstrCheck_rlx_only_needs_low(unsigned rotation, uint64_t mask) {
+    uint32_t mask32 = static_cast<uint32_t>(mask);
+    if (static_cast<uint64_t>(mask32) != mask) {
+        return false;
+    }
+    uint32_t all_ones_32 = ~0U;
+    all_ones_32 <<= rotation;
+
+    return all_ones_32 == mask32;  // mask is only 32 bits and all bits from the
+                                   // rotation are discarded
+}

@@ -8,9 +8,10 @@
 #include <map>
 #include <optional>
 #include <span>
+#include <vector>
 
 #ifndef NOBLE_CRANELIFT_DEBUG
-#define NOBLE_CRANELIFT_DEBUG 1
+#define NOBLE_CRANELIFT_DEBUG 0
 #endif
 
 struct InstructionInfo {
@@ -23,6 +24,7 @@ struct JITFunction {
     GuestAddress mEndAddress;
 
     cranelift::FuncId m_id;
+    bool mCallable = false;
 };
 
 class CraneliftJIT final : public JITBackend {
@@ -43,6 +45,9 @@ public:
 
     JITFunction LookupFunction(GuestAddress address);
 
+    std::optional<JITFunction> FindFunction(GuestAddress address) const;
+    std::vector<JITFunction> CallableFunctions() const;
+
 private:
     Memory& memory_;
     cranelift::JITModule jit_module_;
@@ -57,4 +62,7 @@ private:
 
     std::unordered_map<GuestAddress, JITFunction> functions_;
     std::unordered_map<GuestAddress, std::shared_ptr<const JITBlock>> compiledBlocks_;
+
+public:
+    cranelift::FuncId host_yield_id;
 };

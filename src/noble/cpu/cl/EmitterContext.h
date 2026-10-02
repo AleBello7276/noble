@@ -6,7 +6,7 @@
 
 // set to 0 for a direct load or store on every register access
 #ifndef NOBLE_CRANELIFT_REGISTER_CACHE
-#define NOBLE_CRANELIFT_REGISTER_CACHE 1
+#define NOBLE_CRANELIFT_REGISTER_CACHE 0
 #endif
 
 class CraneliftJIT;
@@ -98,6 +98,14 @@ public:
     }
     bool comment(std::string text) { return builder.comment(std::move(text)); }
 
+    template <bool Signed = true>
+    void record_cr(size_t field, cranelift::Value lhs, cranelift::Value rhs);
+
+    template <bool Signed = true>
+    void record_cr(size_t field, cranelift::Value lhs);
+
+    cranelift::Value get_cr_field(size_t field, size_t bit);
+
 public:
     PPCFuncMap mFuncRanges;
     std::unordered_map<GuestAddress, cranelift::Block> clBlockMap;
@@ -120,6 +128,7 @@ public:
     cranelift::JITModule& jit;
     cranelift::FunctionBuilder& builder;
     cranelift::Value returnAddress = cranelift::INVALID_ID;
+    bool terminated = false;
 
     Memory* memory;
     CraneliftJIT* backend;

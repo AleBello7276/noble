@@ -653,6 +653,9 @@ macro_rules! unary_ins {
 }
 unary_ins!(cl_ins_ineg, ineg);
 unary_ins!(cl_ins_bnot, bnot);
+unary_ins!(cl_ins_clz, clz);
+unary_ins!(cl_ins_ctz, ctz);
+unary_ins!(cl_ins_popcnt, popcnt);
 unary_ins!(cl_ins_bswap, bswap);
 
 #[no_mangle]
@@ -722,6 +725,11 @@ pub unsafe extern "C" fn cl_ins_brif(builder: *mut FunctionBuilder<'static>, con
     let then_args: Vec<BlockArg> = then_args.into_iter().map(Into::into).collect();
     let else_args: Vec<BlockArg> = else_args.into_iter().map(Into::into).collect();
     (*builder).ins().brif(Value::from_u32(condition), Block::from_u32(then_block), &then_args, Block::from_u32(else_block), &else_args).as_u32()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn cl_ins_nop(builder: *mut FunctionBuilder<'static>) -> u32 {
+    (*builder).ins().nop().as_u32()
 }
 
 #[no_mangle]

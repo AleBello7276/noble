@@ -12,9 +12,19 @@ inline constexpr auto emitter_dispatch_table = [] {
     table[to_underlying(PpcOpcode::Mtspr)] = &cl_mtspr_handler;
 
     table[to_underlying(PpcOpcode::B)] = &cl_b_handler;
+    table[to_underlying(PpcOpcode::Bc)] = &cl_bc_handler;
+    table[to_underlying(PpcOpcode::Bcctr)] = &cl_bcctr_handler;
 
     table[to_underlying(PpcOpcode::Addis)] = &cl_addis_handler;
+    table[to_underlying(PpcOpcode::Addi)] = &cl_addi_handler;
     table[to_underlying(PpcOpcode::Or)] = &cl_or__handler;
+    table[to_underlying(PpcOpcode::Ori)] = &cl_ori_handler;
+    table[to_underlying(PpcOpcode::Cmpi)] = &cl_cmpi_handler;
+    table[to_underlying(PpcOpcode::Cmpli)] = &cl_cmpli_handler;
+    table[to_underlying(PpcOpcode::Cmpl)] = &cl_cmpl_handler;
+    table[to_underlying(PpcOpcode::Extsb)] = &cl_extsb_handler;
+    table[to_underlying(PpcOpcode::Cntlzw)] = &cl_cntlzw_handler;
+    table[to_underlying(PpcOpcode::Rlwinm)] = &cl_rlwinm_handler;
 
     // byte load/store
     table[to_underlying(PpcOpcode::Lbz)] = &cl_lbz_handler;

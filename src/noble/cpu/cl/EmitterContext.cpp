@@ -19,6 +19,10 @@ constexpr std::int32_t SPROffset(size_t struct_offset) {
     return static_cast<std::int32_t>(offsetof(PPCContext, SPRs) + struct_offset);
 }
 
+constexpr std::int32_t CRFieldBitOffset(size_t field_index, size_t bit_index = 0) {
+    return static_cast<std::int32_t>(offsetof(PPCContext, ControlRegister) + (4 * field_index) + bit_index);
+}
+
 }  // namespace
 
 cranelift::Value EmitterContext::load_gpr(size_t index) {
@@ -209,15 +213,18 @@ void EmitterContext::InvalidateState() {
 void EmitterContext::SwitchToBlock(cranelift::Block block) {
     InvalidateState();
     builder.switch_to_block(block);
+    terminated = false;
 }
 
 cranelift::Inst EmitterContext::Return() {
     FlushState();
+    terminated = true;
     return builder.ins().return_();
 }
 
 cranelift::Inst EmitterContext::Jump(cranelift::Block destination, std::span<const cranelift::Value> args) {
     FlushState();
+    terminated = true;
     return builder.ins().jump(destination, args);
 }
 
@@ -227,6 +234,7 @@ cranelift::Inst EmitterContext::Branch(cranelift::Value condition, cranelift::Bl
                                        std::span<const cranelift::Value> else_args) {
     FlushState();
 
+    terminated = true;
     return builder.ins().brif(condition, then_block, then_args, else_block, else_args);
 }
 
@@ -275,4 +283,48 @@ void EmitterContext::store_memory(cranelift::Value base, cranelift::Value offset
     const auto ea = builder.ins().iadd(base, offset);
 
     store_memory(ea, value);
+}
+
+template <bool Signed>
+void EmitterContext::record_cr(size_t field, cranelift::Value lhs, cranelift::Value rhs) {
+    using namespace cranelift;
+
+    constexpr unsigned LT_BIT_MASK = 1 << 0;
+    constexpr unsigned GT_BIT_MASK = 1 << 8;
+    constexpr unsigned EQ_BIT_MASK = 1 << 16;
+    Value lt;
+    Value gt;
+
+    if constexpr (Signed) {
+        lt = ins().icmp(IntCC::CL_INTCC_SIGNED_LESS_THAN, lhs, rhs);
+        gt = ins().icmp(IntCC::CL_INTCC_SIGNED_GREATER_THAN, lhs, rhs);
+    } else {
+        lt = ins().icmp(IntCC::CL_INTCC_UNSIGNED_LESS_THAN, lhs, rhs);
+        gt = ins().icmp(IntCC::CL_INTCC_UNSIGNED_GREATER_THAN, lhs, rhs);
+    }
+
+    // pack the comparisons into a i32 Value, only one bit of the three can be 1 at a time, the EQ is neither
+    // LT or GT
+    const Value packed
+        = ins().select(lt, i32(LT_BIT_MASK), ins().select(gt, i32(GT_BIT_MASK), i32(EQ_BIT_MASK)));
+
+    // TODO: handle SO bit, under a config flag
+
+    ins().store(builder.memflags_new(), packed, vCpuState, CRFieldBitOffset(field));
+}
+
+template <bool Signed>
+void EmitterContext::record_cr(size_t field, cranelift::Value lhs) {
+    record_cr<Signed>(field, ins().ireduce(cranelift::types::I32(), lhs), i32(0));
+}
+
+template void EmitterContext::record_cr<true>(size_t, cranelift::Value, cranelift::Value);
+template void EmitterContext::record_cr<false>(size_t, cranelift::Value, cranelift::Value);
+template void EmitterContext::record_cr<true>(size_t, cranelift::Value);
+template void EmitterContext::record_cr<false>(size_t, cranelift::Value);
+
+cranelift::Value EmitterContext::get_cr_field(size_t field, size_t bit) {
+    const auto value = builder.ins().load(cranelift::types::I8(), builder.memflags_new(), vCpuState,
+                                          CRFieldBitOffset(field, bit));
+    return value;
 }

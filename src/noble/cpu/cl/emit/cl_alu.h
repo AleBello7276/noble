@@ -9,7 +9,22 @@ CLHandler(addis) {
 
     const auto shifted = sign_extend<16>(uimm) << 16;
     const Value immediate = e_.i64(shifted);
-    Value toStore;
+    Value toStore = immediate;
+
+    // if 0 it's LI so it skips this
+    if (ra != 0)
+        toStore = e_.ins().iadd(e_.load_gpr(ra), immediate);
+
+    e_.store_gpr(rt, toStore);
+}
+
+CLHandler(addi) {
+    const auto rt = info_.mInst.field_rd();
+    const auto ra = info_.mInst.field_ra();
+    const auto uimm = info_.mInst.field_uimm();
+
+    const Value immediate = e_.i64(sign_extend<16>(uimm));
+    Value toStore = immediate;
 
     // if 0 it's LI so it skips this
     if (ra != 0)
@@ -19,17 +34,178 @@ CLHandler(addis) {
 }
 
 CLHandler(or_) {
-    const auto rt = info_.mInst.field_rd();
+    const auto rc = info_.mInst.field_rc();
     const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
+    const auto rb = info_.mInst.field_rb();
+
+    // nop or yield (db16cyc)
+    if (ra == rb && rb == rs && rc == 0) {
+        // or r31, r31, r31 (db16cyc)
+        if (info_.mInst.code == 0x7FFFFB78) {
+            auto func_ref = e_.builder.declare_func_in_func(e_.jit, e_.backend->host_yield_id);
+            e_.ins().call(func_ref);
+            return;
+        }
+
+        // or acts as a nop (not needed to emit)
+        e_.ins().nop();
+        return;
+    }
+
+    Value res;
+
+    if (rs == rb)  // Move Register (mr)
+        res = e_.load_gpr(rs);
+    else  // normal or operation
+        res = e_.ins().bor(e_.load_gpr(rs), e_.load_gpr(rb));
+
+    e_.store_gpr(ra, res);
+
+    if (rc)
+        e_.record_cr(0, res);
+}
+
+CLHandler(ori) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
     const auto uimm = info_.mInst.field_uimm();
 
-    const auto shifted = sign_extend<16>(uimm) << 16;
-    const Value immediate = e_.i64(shifted);
-    Value toStore;
+    // nop -> ori 0, 0, 0
+    if (ra == 0 && rs == 0 && uimm == 0) {
+        e_.ins().nop();
+        return;
+    }
 
-    // if 0 it's LI so it skips this
-    if (ra != 0)
-        toStore = e_.ins().iadd(e_.load_gpr(ra), immediate);
+    const Value immediate = e_.i64(zero_extend<16>(uimm));
+    Value ored = e_.ins().bor(e_.load_gpr(rs), immediate);
 
-    e_.store_gpr(rt, toStore);
+    e_.store_gpr(ra, ored);
+}
+
+CLHandler(cmpi) {
+    const auto l = info_.mInst.field_l();
+    const auto ra = info_.mInst.field_ra();
+    const auto simm = info_.mInst.field_simm();
+    const auto crfd = info_.mInst.field_crfd();
+
+    Value lhs;
+    Value rhs;
+
+    if (l) {
+        lhs = e_.load_gpr(ra);
+        rhs = e_.i64(sign_extend<16>(simm));
+    } else {
+        lhs = e_.ins().ireduce(types::I32(), e_.load_gpr(ra));
+        rhs = e_.i32(sign_extend<16>(simm));
+    }
+
+    e_.record_cr(crfd, lhs, rhs);
+}
+
+CLHandler(cmpli) {
+    const auto l = info_.mInst.field_l();
+    const auto ra = info_.mInst.field_ra();
+    const auto simm = info_.mInst.field_simm();
+    const auto crfd = info_.mInst.field_crfd();
+
+    Value lhs;
+    Value rhs;
+
+    if (l) {
+        lhs = e_.load_gpr(ra);
+        rhs = e_.i64(sign_extend<16>(simm));
+    } else {
+        lhs = e_.ins().ireduce(types::I32(), e_.load_gpr(ra));
+        rhs = e_.i32(sign_extend<16>(simm));
+    }
+
+    e_.record_cr<false>(crfd, lhs, rhs);
+}
+
+CLHandler(cmpl) {
+    const auto l = info_.mInst.field_l();
+    const auto ra = info_.mInst.field_ra();
+    const auto rb = info_.mInst.field_rb();
+    const auto crfd = info_.mInst.field_crfd();
+
+    Value lhs;
+    Value rhs;
+
+    if (l) {
+        lhs = e_.load_gpr(ra);
+        rhs = e_.load_gpr(rb);
+    } else {
+        lhs = e_.ins().ireduce(types::I32(), e_.load_gpr(ra));
+        rhs = e_.ins().ireduce(types::I32(), e_.load_gpr(rb));
+    }
+
+    e_.record_cr<false>(crfd, lhs, rhs);
+}
+
+CLHandler(extsb) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
+    const auto rc = info_.mInst.field_rc();
+
+    Value res = e_.sext(types::I64(), e_.ins().ireduce(types::I8(), e_.load_gpr(rs)));
+    e_.store_gpr(ra, res);
+
+    if (rc)
+        e_.record_cr(0, res);
+}
+
+CLHandler(cntlzw) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
+    const auto rc = info_.mInst.field_rc();
+
+    Value count = e_.ins().clz(e_.ins().ireduce(types::I32(), e_.load_gpr(rs)));
+    Value ext = e_.zext(types::I64(), count);
+    e_.store_gpr(ra, ext);
+
+    if (rc)
+        e_.record_cr(0, ext);
+}
+
+CLHandler(rlwinm) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
+    const auto rc = info_.mInst.field_rc();
+    const auto sh = info_.mInst.field_sh();
+    const auto mb = info_.mInst.field_mb();
+    const auto me = info_.mInst.field_me();
+
+    const uint64_t mask = PPCMASK(mb + 32, me + 32);
+    const Value source = e_.load_gpr(rs);
+
+    const Value result = [&]() -> Value {
+        // a nonwrapping mask with no rotation can operate directly on the full gpr
+        if (mask <= UINT32_MAX && sh == 0)
+            return e_.ins().band(source, e_.i64(mask));
+
+        const Value word = e_.ins().ireduce(types::I32(), source);
+
+        // the mask discards every wrapped bit so a word shift and zero extension suffice
+        if (InstrCheck_rlx_only_needs_low(sh, mask))
+            return e_.zext(types::I64(), e_.ins().ishl(word, e_.i32(sh)));
+
+        const Value rotated = sh ? e_.ins().rotl(word, e_.i32(sh)) : word;
+
+        // use a word mask before zero extending the result to the gpr width
+        if (mask <= UINT32_MAX) {
+            const Value masked = mask == UINT32_MAX ? rotated : e_.ins().band(rotated, e_.i32(mask));
+            return e_.zext(types::I64(), masked);
+        }
+
+        // wrapping masks include the upper word of the architectural repeated rotation
+        const Value low = e_.zext(types::I64(), rotated);
+        const Value repeated = e_.ins().bor(e_.ins().ishl(low, e_.i64(32)), low);
+        return mask == UINT64_MAX ? repeated : e_.ins().band(repeated, e_.i64(mask));
+    }();
+
+    e_.store_gpr(ra, result);
+
+    if (rc)
+        e_.record_cr(0, result, e_.i64(0));
 }

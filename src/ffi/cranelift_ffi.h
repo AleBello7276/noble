@@ -211,6 +211,12 @@ ClValue cl_ins_fmul(ClFunctionBuilder* builder, ClValue left, ClValue right);
 ClValue cl_ins_fdiv(ClFunctionBuilder* builder, ClValue left, ClValue right);
 ClValue cl_ins_ineg(ClFunctionBuilder* builder, ClValue value);
 ClValue cl_ins_bnot(ClFunctionBuilder* builder, ClValue value);
+// count leading zero bits and return the input bit width for zero
+ClValue cl_ins_clz(ClFunctionBuilder* builder, ClValue value);
+// count trailing zero bits and return the input bit width for zero
+ClValue cl_ins_ctz(ClFunctionBuilder* builder, ClValue value);
+// count set bits in the integer value
+ClValue cl_ins_popcnt(ClFunctionBuilder* builder, ClValue value);
 ClValue cl_ins_bswap(ClFunctionBuilder* builder, ClValue value);
 ClValue cl_ins_ireduce(ClFunctionBuilder* builder, ClType type, ClValue value);
 ClValue cl_ins_uextend(ClFunctionBuilder* builder, ClType type, ClValue value);
@@ -222,6 +228,7 @@ ClInst cl_ins_jump(ClFunctionBuilder* builder, ClBlock destination, const ClValu
 ClInst cl_ins_brif(ClFunctionBuilder* builder, ClValue condition, ClBlock then_block,
                    const ClValue* then_args, size_t then_len, ClBlock else_block, const ClValue* else_args,
                    size_t else_len);
+ClInst cl_ins_nop(ClFunctionBuilder* builder);
 ClInst cl_ins_return(ClFunctionBuilder* builder, const ClValue* args, size_t len);
 ClInst cl_ins_call(ClFunctionBuilder* builder, ClFuncRef function, const ClValue* args, size_t len);
 ClInst cl_ins_call_indirect(ClFunctionBuilder* builder, ClSigRef signature, ClValue callee,

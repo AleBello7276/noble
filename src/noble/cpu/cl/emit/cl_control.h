@@ -2,12 +2,96 @@
 
 #include "cl_util.h"
 
+static inline void branch_fallback(EmitterContext& e_, Value nia) {
+    e_.ins().store(e_.builder.memflags_new(), nia, e_.vCpuState, offsetof(PPCContext, NIA));
+    e_.Return();
+}
+
+static inline void branch_call(EmitterContext& e_, InstructionInfo& info_, FuncId function, bool LK) {
+    const GuestAddress nextAddress = info_.mAddress + 4;
+
+    if (LK)
+        e_.ins().store(e_.builder.memflags_new(), e_.i32(nextAddress), e_.vCpuState,
+                       offsetof(PPCContext, NIA));
+
+    e_.CallGuest(e_.builder.declare_func_in_func(e_.jit, function));
+    if (!LK) {
+        e_.Return();
+        return;
+    }
+    const Value nia
+        = e_.ins().load(types::I32(), e_.builder.memflags_new(), e_.vCpuState, offsetof(PPCContext, NIA));
+    const Value resumed = e_.ins().icmp(IntCC::CL_INTCC_EQUAL, nia, e_.i32(nextAddress));
+    const Block continuation = e_.builder.create_block();
+    const Block dispatched = e_.builder.create_block();
+
+    e_.Branch(resumed, continuation, {}, dispatched, {});
+    e_.SwitchToBlock(dispatched);
+    e_.Return();
+
+    e_.SwitchToBlock(continuation);
+}
+
+static inline void branch(EmitterContext& e_, InstructionInfo& info_, GuestAddress NIA, bool LK) {
+    if (!LK || NIA == info_.mAddress + 4) {
+        const Block label = e_.BlockLookup(NIA);
+        if (label != INVALID_ID) {
+            e_.Jump(label);
+            return;
+        }
+    }
+
+    if (const auto function = e_.backend->FindFunction(NIA)) {
+        branch_call(e_, info_, function->m_id, LK);
+        return;
+    }
+
+    branch_fallback(e_, e_.i32(NIA));
+}
+
+static inline void branch_indirect(EmitterContext& e_, InstructionInfo& info_, Value NIA, bool LK) {
+    const auto blocks = e_.clBlockMap;
+
+    if (!LK) {
+        for (const auto& [address, label] : blocks) {
+            const Block next = e_.builder.create_block();
+            const Value matches = e_.ins().icmp(IntCC::CL_INTCC_EQUAL, NIA, e_.i32(address));
+
+            e_.Branch(matches, label, {}, next, {});
+            e_.SwitchToBlock(next);
+        }
+    }
+
+    const auto functions = e_.backend ? e_.backend->CallableFunctions() : std::vector<JITFunction>{};
+    const Block continuation = LK && !functions.empty() ? e_.builder.create_block() : INVALID_ID;
+
+    for (const auto& function : functions) {
+        const Block call = e_.builder.create_block();
+        const Block next = e_.builder.create_block();
+        const Value matches = e_.ins().icmp(IntCC::CL_INTCC_EQUAL, NIA, e_.i32(function.mStartAddress));
+
+        e_.Branch(matches, call, {}, next, {});
+        e_.SwitchToBlock(call);
+        branch_call(e_, info_, function.m_id, LK);
+
+        if (!e_.terminated)
+            e_.Jump(continuation);
+
+        e_.SwitchToBlock(next);
+    }
+
+    branch_fallback(e_, NIA);
+
+    if (continuation != INVALID_ID)
+        e_.SwitchToBlock(continuation);
+}
+
 CLHandler(b) {
     const auto lk = info_.mInst.field_lk();
-    const auto aa = info_.mInst.field_lk();
+    const auto aa = info_.mInst.field_aa();
     const auto li = info_.mInst.field_li();
 
-    assert(aa);  // NOT YET IMPLEMENTED
+    assert(!aa);  // NOT YET IMPLEMENTED
 
     GuestAddress NIA = info_.mAddress + sign_extend<26>(li);
 
@@ -16,13 +100,70 @@ CLHandler(b) {
         e_.store_spr(eSPR::LR, return_address);
     }
 
-    bool recursive = (NIA == e_.mFuncRanges.mStart) && lk ? true : false;
+    branch(e_, info_, NIA, lk);
+}
 
-    Block label = e_.BlockLookup(NIA);
-    if (label != INVALID_ID) {
-        e_.Jump(label);
-    } else {
-        auto func = e_.backend->LookupFunction(NIA);
-        e_.CallGuest(e_.builder.declare_func_in_func(e_.jit, func.m_id));
+CLHandler(bc) {
+    const auto bo = info_.mInst.field_bo();
+    const auto bi = info_.mInst.field_bi();
+    const auto lk = info_.mInst.field_lk();
+
+    Value ctr_ok = e_.i8(1);
+    if ((bo & 4) == 0) {
+        const Value ctr = e_.ins().iadd_imm(e_.load_spr(eSPR::CTR), -1);
+        e_.store_spr(eSPR::CTR, ctr);
+        ctr_ok = e_.ins().icmp((bo & 2) ? IntCC::CL_INTCC_EQUAL : IntCC::CL_INTCC_NOT_EQUAL, ctr, e_.i64(0));
     }
+
+    Value cond_ok = e_.i8(1);
+    if ((bo & 16) == 0) {
+        const Value bit = e_.get_cr_field(bi >> 2, bi & 3);
+        cond_ok = e_.ins().icmp(IntCC::CL_INTCC_EQUAL, bit, e_.i8((bo & 8) != 0));
+    }
+
+    // lk updates lr regardless of whether the conditional branch is taken
+    if (lk)
+        e_.store_spr(eSPR::LR, e_.i64(info_.mAddress + 4));
+
+    const Block b_True = e_.builder.create_block();
+    const Block b_False = e_.builder.create_block();
+    const Value do_branch = e_.ins().band(ctr_ok, cond_ok);
+    e_.Branch(do_branch, b_True, {}, b_False, {});
+    e_.SwitchToBlock(b_True);
+
+    const GuestAddress NIA = info_.mInst.branch_dest(info_.mAddress).value();
+    branch(e_, info_, NIA, lk);
+    if (!e_.terminated)
+        e_.Jump(b_False);
+
+    e_.SwitchToBlock(b_False);
+}
+
+CLHandler(bcctr) {
+    const auto bo = info_.mInst.field_bo();
+    const auto bi = info_.mInst.field_bi();
+    const bool lk = info_.mInst.field_lk();
+
+    Value cond_ok = e_.i8(1);
+    if ((bo & 0x10) == 0)
+        cond_ok
+            = e_.ins().icmp(IntCC::CL_INTCC_EQUAL, e_.get_cr_field(bi >> 2, bi & 3), e_.i8((bo & 0x8) != 0));
+
+    const Block taken = e_.builder.create_block();
+    const Block skipped = e_.builder.create_block();
+
+    e_.Branch(cond_ok, taken, {}, skipped, {});
+    e_.SwitchToBlock(taken);
+
+    const Value target = e_.ins().ireduce(types::I32(), e_.load_spr(eSPR::CTR));
+
+    if (lk)
+        e_.store_spr(eSPR::LR, e_.i64(info_.mAddress + 4));
+
+    branch_indirect(e_, info_, target, lk);
+
+    if (!e_.terminated)
+        e_.Jump(skipped);
+
+    e_.SwitchToBlock(skipped);
 }

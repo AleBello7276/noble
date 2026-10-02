@@ -66,21 +66,51 @@ union FPR {
     double f64;
 };
 
+struct cr_field {
+    uint8_t BIT0;
+    uint8_t BIT1;
+    uint8_t BIT2;
+    uint8_t BIT3;
+};
+
 /* Control Register */
 union CR {
-    uint32_t CRFull;
     uint8_t bits[32];
+    uint32_t fields[8];
     struct {
-        uint32_t CR7 : 4;
-        uint32_t CR6 : 4;
-        uint32_t CR5 : 4;
-        uint32_t CR4 : 4;
-        uint32_t CR3 : 4;
-        uint32_t CR2 : 4;
-        uint32_t CR1 : 4;
-        uint32_t CR0 : 4;
-    };
+        uint8_t LT;
+        uint8_t GT;
+        uint8_t EQ;
+        uint8_t SO;
+    } CR0;
+    struct {
+        uint8_t FX;
+        uint8_t FEX;
+        uint8_t VX;
+        uint8_t OX;
+    } CR1;
+    cr_field CR2;
+    cr_field CR3;
+    cr_field CR4;
+    cr_field CR5;
+    cr_field CR6;
+    cr_field CR7;
 };
+
+// union CR {
+//     uint32_t CRFull;
+//     uint8_t bits[32];
+//     struct {
+//         uint32_t CR7 : 4;
+//         uint32_t CR6 : 4;
+//         uint32_t CR5 : 4;
+//         uint32_t CR4 : 4;
+//         uint32_t CR3 : 4;
+//         uint32_t CR2 : 4;
+//         uint32_t CR1 : 4;
+//         uint32_t CR0 : 4;
+//     };
+// };
 
 enum eSPR : uint16_t {
     XER = 1,
@@ -130,6 +160,7 @@ struct PPCContext {
     Vector128 VRs[VR_COUNT]{};
     CR ControlRegister{};
     uint32_t CIA = 0;
+    uint32_t NIA = 0;
     SPRState SPRs;
 
     // retain host execution metadata outside the guest architectural register file
