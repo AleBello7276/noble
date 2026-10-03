@@ -127,7 +127,7 @@ cranelift::Value EmitterContext::load_spr(eSPR type) {
 #if NOBLE_CRANELIFT_REGISTER_CACHE
         cached.value = value;
 #endif
-        return zext(cranelift::types::I64(), value);
+        return zext64(value);
     }
     case eSPR::LR:
         return load_spr(offsetof(SPRState, LR));
@@ -259,7 +259,7 @@ cranelift::Inst EmitterContext::CallIndirect(cranelift::SigRef signature, cranel
 cranelift::Value EmitterContext::load_memory(cranelift::Value ea, cranelift::Type load_type) {
     const cranelift::Value mem = vMemBase;
 
-    ea = zext(cranelift::types::I64(), ins().ireduce(cranelift::types::I32(), ea));
+    ea = zext64(ins().ireduce(cranelift::types::I32(), ea));
     const auto addr = builder.ins().iadd(mem, ea);
 
     return builder.ins().load(load_type, builder.memflags_new(), addr, 0);
@@ -275,7 +275,7 @@ cranelift::Value EmitterContext::load_memory(cranelift::Value base, cranelift::V
 void EmitterContext::store_memory(cranelift::Value ea, cranelift::Value value) {
     const cranelift::Value mem = vMemBase;
 
-    ea = zext(cranelift::types::I64(), ins().ireduce(cranelift::types::I32(), ea));
+    ea = zext64(ins().ireduce(cranelift::types::I32(), ea));
     const auto addr = builder.ins().iadd(mem, ea);
 
     builder.ins().store(builder.memflags_new(), value, addr, 0);

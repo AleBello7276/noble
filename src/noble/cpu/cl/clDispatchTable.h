@@ -15,6 +15,7 @@ inline constexpr auto emitter_dispatch_table = [] {
     table[to_underlying(PpcOpcode::Bc)] = &cl_bc_handler;
     table[to_underlying(PpcOpcode::Bclr)] = &cl_bclr_handler;
     table[to_underlying(PpcOpcode::Bcctr)] = &cl_bcctr_handler;
+    table[to_underlying(PpcOpcode::Twi)] = &cl_twi_handler;
 
     table[to_underlying(PpcOpcode::Add)] = &cl_add_handler;
     table[to_underlying(PpcOpcode::Addze)] = &cl_addze_handler;
@@ -26,6 +27,7 @@ inline constexpr auto emitter_dispatch_table = [] {
     table[to_underlying(PpcOpcode::Subfic)] = &cl_subfic_handler;
     table[to_underlying(PpcOpcode::Subfe)] = &cl_subfe_handler;
     table[to_underlying(PpcOpcode::And)] = &cl_and__handler;
+    table[to_underlying(PpcOpcode::Andc)] = &cl_andc_handler;
     table[to_underlying(PpcOpcode::Andi_)] = &cl_andi_handler;
     table[to_underlying(PpcOpcode::Or)] = &cl_or__handler;
     table[to_underlying(PpcOpcode::Ori)] = &cl_ori_handler;
@@ -40,6 +42,11 @@ inline constexpr auto emitter_dispatch_table = [] {
     table[to_underlying(PpcOpcode::Slw)] = &cl_slw_handler;
     table[to_underlying(PpcOpcode::Rlwinm)] = &cl_rlwinm_handler;
     table[to_underlying(PpcOpcode::Rlwimi)] = &cl_rlwimi_handler;
+    table[to_underlying(PpcOpcode::Divwu)] = &cl_divwu_handler;
+    table[to_underlying(PpcOpcode::Mullw)] = &cl_mullw_handler;
+    table[to_underlying(PpcOpcode::Mulli)] = &cl_mulli_handler;
+    table[to_underlying(PpcOpcode::Xor)] = &cl_xor__handler;
+    table[to_underlying(PpcOpcode::Nor)] = &cl_nor_handler;
 
     table[to_underlying(PpcOpcode::Dcbt)] = &cl_dcbt_handler;
     table[to_underlying(PpcOpcode::Dcbtst)] = &cl_dcbtst_handler;

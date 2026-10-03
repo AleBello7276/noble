@@ -40,6 +40,16 @@ typedef uint32_t ClGlobalValue;
 typedef uint32_t ClSigRef;
 typedef uint32_t ClMemFlags;
 
+// nonzero raw cranelift trap code with user codes from 1 through 250
+typedef uint8_t ClTrapCode;
+typedef enum ClBuiltinTrapCode {
+    CL_TRAP_STACK_OVERFLOW = 251,
+    CL_TRAP_INTEGER_OVERFLOW = 252,
+    CL_TRAP_HEAP_OUT_OF_BOUNDS = 253,
+    CL_TRAP_INTEGER_DIVISION_BY_ZERO = 254,
+    CL_TRAP_BAD_CONVERSION_TO_INTEGER = 255
+} ClBuiltinTrapCode;
+
 #define CL_INVALID_ID UINT32_MAX
 
 typedef enum ClLinkage {
@@ -78,6 +88,8 @@ typedef enum ClCallConv {
 
 // Error text is thread-local and remains valid until the next failing call on that thread.
 const char* cl_last_error(void);
+// construct a user trap code or return zero and set the thread error for an invalid or reserved code
+ClTrapCode cl_trapcode_user(uint8_t code);
 
 ClType cl_type_i8(void);
 ClType cl_type_i16(void);
@@ -205,6 +217,14 @@ ClValuePair cl_ins_uadd_overflow_cin(ClFunctionBuilder* builder, ClValue left, C
                                      ClValue carry_in);
 ClValue cl_ins_isub(ClFunctionBuilder* builder, ClValue left, ClValue right);
 ClValue cl_ins_imul(ClFunctionBuilder* builder, ClValue left, ClValue right);
+// choose the larger integer using unsigned comparison with matching operand types
+ClValue cl_ins_umax(ClFunctionBuilder* builder, ClValue left, ClValue right);
+// choose the smaller integer using unsigned comparison with matching operand types
+ClValue cl_ins_umin(ClFunctionBuilder* builder, ClValue left, ClValue right);
+// choose the larger integer using signed comparison with matching operand types
+ClValue cl_ins_smax(ClFunctionBuilder* builder, ClValue left, ClValue right);
+// choose the smaller integer using signed comparison with matching operand types
+ClValue cl_ins_smin(ClFunctionBuilder* builder, ClValue left, ClValue right);
 ClValue cl_ins_band(ClFunctionBuilder* builder, ClValue left, ClValue right);
 ClValue cl_ins_bor(ClFunctionBuilder* builder, ClValue left, ClValue right);
 ClValue cl_ins_bxor(ClFunctionBuilder* builder, ClValue left, ClValue right);
@@ -298,6 +318,16 @@ ClValue cl_ins_icmp_imm_u(ClFunctionBuilder* builder, uint32_t condition, ClValu
 ClValue cl_ins_icmp_imm(ClFunctionBuilder* builder, uint32_t condition, ClValue value, int64_t immediate);
 ClValue cl_ins_icmp(ClFunctionBuilder* builder, uint32_t condition, ClValue left, ClValue right);
 ClValue cl_ins_select(ClFunctionBuilder* builder, ClValue condition, ClValue if_true, ClValue if_false);
+// terminate the current block with a native trap or return an invalid id for a zero trap code
+ClInst cl_ins_trap(ClFunctionBuilder* builder, ClTrapCode code);
+// trap when the scalar integer condition is zero and continue normally otherwise
+ClInst cl_ins_trapz(ClFunctionBuilder* builder, ClValue condition, ClTrapCode code);
+// trap when the scalar integer condition is nonzero and continue normally otherwise
+ClInst cl_ins_trapnz(ClFunctionBuilder* builder, ClValue condition, ClTrapCode code);
+// emit a native debugger breakpoint without terminating the block
+ClInst cl_ins_debugtrap(ClFunctionBuilder* builder);
+// add matching unsigned scalar integers and trap if the sum overflows
+ClValue cl_ins_uadd_overflow_trap(ClFunctionBuilder* builder, ClValue left, ClValue right, ClTrapCode code);
 // select bits as mask and if_true or inverted mask and if_false with all operands of the same type
 ClValue cl_ins_bitselect(ClFunctionBuilder* builder, ClValue mask, ClValue if_true, ClValue if_false);
 ClInst cl_ins_jump(ClFunctionBuilder* builder, ClBlock destination, const ClValue* args, size_t len);

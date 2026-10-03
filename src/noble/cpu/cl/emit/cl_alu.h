@@ -17,7 +17,7 @@ CLHandler(add) {
         assert(false);
     }
 
-    if (res)
+    if (rc)
         e_.record_cr(0, res);
 }
 
@@ -57,7 +57,7 @@ CLHandler(addis) {
     const auto ra = info_.mInst.field_ra();
     const auto uimm = info_.mInst.field_uimm();
 
-    const Value immediate = sign_extend<16>(uimm) << 16;
+    const auto immediate = sign_extend<16>(uimm) << 16;
     Value toStore = e_.i64(immediate);
 
     // if 0 it's LI so it skips this
@@ -72,7 +72,7 @@ CLHandler(addi) {
     const auto ra = info_.mInst.field_ra();
     const auto simm = info_.mInst.field_simm();
 
-    const Value immediate = sign_extend<16>(simm);
+    const auto immediate = sign_extend<16>(simm);
     Value toStore = e_.i64(immediate);
 
     // if 0 it's LI so it skips this
@@ -174,6 +174,20 @@ CLHandler(and_) {
         e_.record_cr(0, res);
 }
 
+CLHandler(andc) {
+    const auto rs = info_.mInst.field_rs();
+    const auto ra = info_.mInst.field_ra();
+    const auto rb = info_.mInst.field_rb();
+    const auto rc = info_.mInst.field_rc();
+
+    // cranelift has band_not which is equivalent to this, it generates the same bnot and band
+    const Value res = e_.ins().band(e_.load_gpr(rs), e_.ins().bnot(e_.load_gpr(rb)));
+    e_.store_gpr(ra, res);
+
+    if (rc)
+        e_.record_cr(0, res);
+}
+
 CLHandler(andi) {
     const auto ra = info_.mInst.field_ra();
     const auto rb = info_.mInst.field_rb();
@@ -239,7 +253,7 @@ CLHandler(oris) {
     const auto rs = info_.mInst.field_rs();
     const auto uimm = info_.mInst.field_uimm();
 
-    const Value immediate = zero_extend<16>(uimm) << 16;
+    const auto immediate = zero_extend<16>(uimm) << 16;
     Value ored = e_.ins().bor_imm_u(e_.load_gpr(rs), immediate);
     e_.store_gpr(ra, ored);
 }
@@ -329,7 +343,7 @@ CLHandler(extsb) {
     const auto rs = info_.mInst.field_rs();
     const auto rc = info_.mInst.field_rc();
 
-    Value res = e_.sext(types::I64(), e_.ins().ireduce(types::I8(), e_.load_gpr(rs)));
+    Value res = e_.sext64(e_.ins().ireduce(types::I8(), e_.load_gpr(rs)));
     e_.store_gpr(ra, res);
 
     if (rc)
@@ -342,7 +356,7 @@ CLHandler(cntlzw) {
     const auto rc = info_.mInst.field_rc();
 
     Value count = e_.ins().clz(e_.ins().ireduce(types::I32(), e_.load_gpr(rs)));
-    Value ext = e_.zext(types::I64(), count);
+    Value ext = e_.zext64(count);
     e_.store_gpr(ra, ext);
 
     if (rc)
@@ -365,7 +379,7 @@ CLHandler(slw) {
     const Value in_range = e_.ins().icmp_imm_u(IntCC::CL_INTCC_EQUAL, out_of_range, 0);
     const Value result32 = e_.ins().select(in_range, shifted, e_.i32(0));
 
-    const Value result = e_.zext(types::I64(), result32);
+    const Value result = e_.zext64(result32);
 
     e_.store_gpr(ra, result);
 
@@ -381,7 +395,7 @@ CLHandler(srawi) {
 
     const Value word = e_.ins().ireduce(types::I32(), e_.load_gpr(rs));
     const Value shifted = sh ? e_.ins().sshr_imm_u(word, sh) : word;
-    const Value result = e_.sext(types::I64(), shifted);
+    const Value result = e_.sext64(shifted);
 
     Value ca = e_.i8(0);
 
@@ -414,7 +428,7 @@ CLHandler(rlwimi) {
     const Value word = e_.ins().ireduce(types::I32(), e_.load_gpr(rs));
     const Value rotated = sh ? e_.ins().rotl_imm_u(word, sh) : word;
 
-    Value inserted = e_.zext(types::I64(), rotated);
+    Value inserted = e_.zext64(rotated);
 
     if (mask >> 32) {
         inserted = e_.ins().bor(inserted, e_.ins().ishl_imm_u(inserted, 32));
@@ -450,7 +464,7 @@ CLHandler(rlwinm) {
         // no rotation and the mask only touches the low word:
         // operating directly on the GPR avoids the truncate/zext pair.
         if (sh == 0 && !(mask >> 32)) {
-            return mask == UINT32_MAX ? e_.zext(types::I64(), e_.ins().ireduce(types::I32(), source)) :
+            return mask == UINT32_MAX ? e_.zext64(e_.ins().ireduce(types::I32(), source)) :
                                         e_.ins().band(source, e_.i64(mask));
         }
 
@@ -459,7 +473,7 @@ CLHandler(rlwinm) {
         // if every bit that would wrap around is masked away,
         // rotation reduces to a simple left shift.
         if (InstrCheck_rlx_only_needs_low(sh, mask)) {
-            return e_.zext(types::I64(), e_.ins().ishl_imm_u(word, sh));
+            return e_.zext64(e_.ins().ishl_imm_u(word, sh));
         }
 
         const Value rotated = sh ? e_.ins().rotl_imm_u(word, sh) : word;
@@ -470,12 +484,12 @@ CLHandler(rlwinm) {
             const Value masked
                 = mask == UINT32_MAX ? rotated : e_.ins().band(rotated, e_.i32(static_cast<uint32_t>(mask)));
 
-            return e_.zext(types::I64(), masked);
+            return e_.zext64(masked);
         }
 
         // ROTL32 conceptually repeats the rotated word into both
         // halves of the 64-bit intermediate.
-        const Value low = e_.zext(types::I64(), rotated);
+        const Value low = e_.zext64(rotated);
         const Value repeated = e_.ins().bor(e_.ins().ishl_imm_u(low, 32), low);
 
         return mask == UINT64_MAX ? repeated : e_.ins().band(repeated, e_.i64(mask));
@@ -485,4 +499,137 @@ CLHandler(rlwinm) {
 
     if (rc)
         e_.record_cr(0, result, e_.i64(0));
+}
+
+CLHandler(divwu) {
+    const auto oe = info_.mInst.field_oe();
+    const auto rc = info_.mInst.field_rc();
+    const auto rd = info_.mInst.field_rd();
+    const auto ra = info_.mInst.field_ra();
+    const auto rb = info_.mInst.field_rb();
+
+    if (oe) {
+        LOG_FATAL("divwu instruction OE bit not implemented.");
+        assert(false);
+    }
+
+    const Value dividend = e_.reduce32(e_.load_gpr(ra));
+    const Value divisor = e_.reduce32(e_.load_gpr(rb));
+
+    // TODO: ISA for divide by 0 assumes undefined, eventually i should
+    // check what real hardware "defines" as undefined when this happens,
+    // if games do not abuse the undefined beheviour making quotient 0 should be enough
+    // so cranelift udiv never traps
+    const Value is_zero = e_.ins().icmp_imm_u(IntCC::CL_INTCC_EQUAL, divisor, 0);
+
+    // if divisor == 0,
+    // dividend -> 0
+    // divisor -> 1
+    // 0 / 1 = 0
+    const Value safe_dividend = e_.ins().select(is_zero, e_.i32(0), dividend);
+    const Value safe_divisor = e_.ins().select(is_zero, e_.i32(1), divisor);
+
+    const Value quotient = e_.ins().udiv(safe_dividend, safe_divisor);
+    const Value result = e_.zext64(quotient);
+
+    e_.store_gpr(rd, result);
+
+    /*
+        theres also another way to naturally make
+        dividend 1 and divisor 0 if divisor == 0
+        this should be benchmarked against the *select* can be written like this:
+
+        const Value zero32 =
+        e_.ins().uextend(types::I32(), is_zero);
+
+        // divisor == 0:  0 | 1 = 1
+        // divisor != 0:  x | 0 = x
+        const Value safe_divisor =
+        e_.ins().bor(divisor, zero32);
+
+        // divisor == 0:  1 - 1 = 0x00000000
+        // divisor != 0:  0 - 1 = 0xFFFFFFFF
+        const Value dividend_mask =
+        e_.ins().iadd_imm_s(zero32, -1);
+
+        const Value safe_dividend =
+        e_.ins().band(dividend, dividend_mask);
+    */
+
+    if (rc)
+        e_.record_cr(0, result);
+}
+
+CLHandler(mullw) {
+    const auto oe = info_.mInst.field_oe();
+    const auto rc = info_.mInst.field_rc();
+    const auto rd = info_.mInst.field_rd();
+    const auto ra = info_.mInst.field_ra();
+    const auto rb = info_.mInst.field_rb();
+
+    if (oe) {
+        LOG_FATAL("mullw instruction OE bit not implemented.");
+        assert(false);
+    }
+
+    const Value a32 = e_.reduce32(e_.load_gpr(ra));
+    const Value b32 = e_.reduce32(e_.load_gpr(rb));
+
+    const Value a64 = e_.sext64(a32);
+    const Value b64 = e_.sext64(b32);
+
+    const Value res = e_.ins().imul(a64, b64);
+    e_.store_gpr(rd, res);
+
+    if (rc)
+        e_.record_cr(0, res);
+}
+
+CLHandler(mulli) {
+    const auto rd = info_.mInst.field_rd();
+    const auto ra = info_.mInst.field_ra();
+    const auto simm = info_.mInst.field_simm();
+
+    const auto immediate = sign_extend<16>(simm);
+
+    Value res = e_.ins().imul_imm_s(e_.load_gpr(ra), immediate);
+    e_.store_gpr(rd, res);
+}
+
+CLHandler(xor_) {
+    const auto rc = info_.mInst.field_rc();
+    const auto rs = info_.mInst.field_rs();
+    const auto ra = info_.mInst.field_ra();
+    const auto rb = info_.mInst.field_rb();
+
+    const Value res = e_.ins().bxor(e_.load_gpr(rs), e_.load_gpr(rb));
+    e_.store_gpr(ra, res);
+
+    if (rc)
+        e_.record_cr(0, res);
+}
+
+CLHandler(nor) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
+    const auto rb = info_.mInst.field_rb();
+    const auto rc = info_.mInst.field_rc();
+
+    const Value rsV = e_.load_gpr(rs);
+
+    Value res;
+
+    // ~(x | x) == ~x
+    if (rs == rb) {
+        res = e_.ins().bnot(rsV);
+    } else {
+        // only load when rs != rb, cranelift probably would optimise the double load anyway
+        const Value rbV = e_.load_gpr(rb);
+        res = e_.ins().bnot(e_.ins().bor(rsV, rbV));
+    }
+
+    e_.store_gpr(ra, res);
+
+    if (rc)
+        e_.record_cr(0, res);
 }

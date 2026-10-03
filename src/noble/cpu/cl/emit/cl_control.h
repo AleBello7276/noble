@@ -210,3 +210,51 @@ CLHandler(bcctr) {
 
     e_.SwitchToBlock(skipped);
 }
+
+// TODO: finish implementation, and hook host handler, for now just assume traps are ignored
+CLHandler(twi) {
+    // const auto to = info_.mInst.field_to();  // or field_rt()
+    // const auto ra = info_.mInst.field_ra();
+    // const auto simm = info_.mInst.field_simm();
+    //
+    // const int32_t imm = sign_extend<16>(simm);
+    //
+    //// special software trap
+    //// twi 31, r0, imm
+    // if (ra == 0 && to == 0x1F) {
+    //     e_.emit_trap(static_cast<uint16_t>(imm));
+    //     return;
+    // }
+    //
+    // if (to == 0)
+    //    return;
+    //
+    // const Value a = e_.ins().ireduce(types::I32(), e_.load_gpr(ra));
+    //
+    // Value trap = e_.i8(0);
+    //
+    //// signed <
+    // if (to & 0x10)
+    //     trap = e_.ins().bor(trap, e_.ins().icmp_imm_s(IntCC::CL_INTCC_SIGNED_LESS_THAN, a, imm));
+    //
+    //// signed >
+    // if (to & 0x08)
+    //     trap = e_.ins().bor(trap, e_.ins().icmp_imm_s(IntCC::CL_INTCC_SIGNED_GREATER_THAN, a, imm));
+    //
+    //// ==
+    // if (to & 0x04)
+    //     trap = e_.ins().bor(trap, e_.ins().icmp_imm_s(IntCC::CL_INTCC_EQUAL, a, imm));
+    //
+    //// unsigned <
+    // if (to & 0x02)
+    //     trap = e_.ins().bor(
+    //         trap, e_.ins().icmp_imm_u(IntCC::CL_INTCC_UNSIGNED_LESS_THAN, a, static_cast<uint32_t>(imm)));
+    //
+    //// unsigned >
+    // if (to & 0x01)
+    //     trap = e_.ins().bor(
+    //         trap, e_.ins().icmp_imm_u(IntCC::CL_INTCC_UNSIGNED_GREATER_THAN, a,
+    //         static_cast<uint32_t>(imm)));
+    //
+    // e_.emit_trap_if(trap);
+}

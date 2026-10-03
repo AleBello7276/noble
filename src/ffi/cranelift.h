@@ -2,6 +2,7 @@
 
 #include "cranelift_ffi.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
@@ -14,22 +15,86 @@
 namespace cranelift {
 
 using Type = ClType;
-using Value = ClValue;
-using Block = ClBlock;
-using Inst = ClInst;
-using Variable = ClVariable;
-using FuncRef = ClFuncRef;
-using FuncId = ClFuncId;
-using DataId = ClDataId;
-using GlobalValue = ClGlobalValue;
-using SigRef = ClSigRef;
+// an invalid entity can initialize or compare against any entity type
+struct InvalidId {};
+inline constexpr InvalidId INVALID_ID{};
+
+// entity ids belong to their function or module and are distinct from integer constants
+// default construction produces an invalid id and raw exposes the id for the c ffi
+template <class Tag>
+class EntityId {
+public:
+    // create an invalid id
+    constexpr EntityId() noexcept = default;
+    // accept the shared invalid sentinel without accepting integers implicitly
+    constexpr EntityId(InvalidId) noexcept {}
+    // explicitly wrap a raw c ffi id of this entity kind
+    explicit constexpr EntityId(std::uint32_t id) noexcept : id_(id) {}
+
+    // return the integer id for calls through the c ffi
+    constexpr std::uint32_t raw() const noexcept { return id_; }
+    // check the invalid sentinel without checking ownership or entity lifetime
+    constexpr bool valid() const noexcept { return id_ != CL_INVALID_ID; }
+    // compare ids of the same entity kind
+    friend constexpr bool operator==(EntityId, EntityId) noexcept = default;
+
+private:
+    std::uint32_t id_ = CL_INVALID_ID;
+};
+
+using Value = EntityId<struct ValueTag>;
+using Block = EntityId<struct BlockTag>;
+using Inst = EntityId<struct InstTag>;
+using Variable = EntityId<struct VariableTag>;
+using FuncRef = EntityId<struct FuncRefTag>;
+using FuncId = EntityId<struct FuncIdTag>;
+using DataId = EntityId<struct DataIdTag>;
+using GlobalValue = EntityId<struct GlobalValueTag>;
+using SigRef = EntityId<struct SigRefTag>;
 using MemFlags = ClMemFlags;
 using Linkage = ClLinkage;
 using IntCC = ClIntCC;
 using Endianness = ClEndianness;
 using CallConv = ClCallConv;
+using TrapCode = ClTrapCode;
 
-inline constexpr std::uint32_t INVALID_ID = CL_INVALID_ID;
+namespace detail {
+
+// copy ids to c storage without treating wrapper objects as integer arrays
+class RawValues {
+public:
+    explicit RawValues(std::span<const Value> values) : size_(values.size()) {
+        if (size_ > local_.size())
+            large_.resize(size_);
+        auto* target = size_ > local_.size() ? large_.data() : local_.data();
+        for (std::size_t i = 0; i < size_; ++i)
+            target[i] = values[i].raw();
+    }
+    const ClValue* data() const noexcept { return size_ > local_.size() ? large_.data() : local_.data(); }
+    std::size_t size() const noexcept { return size_; }
+
+private:
+    std::array<ClValue, 8> local_{};
+    std::vector<ClValue> large_;
+    std::size_t size_;
+};
+
+}  // namespace detail
+
+namespace trapcodes {
+
+inline constexpr TrapCode STACK_OVERFLOW = CL_TRAP_STACK_OVERFLOW;
+inline constexpr TrapCode INTEGER_OVERFLOW = CL_TRAP_INTEGER_OVERFLOW;
+inline constexpr TrapCode HEAP_OUT_OF_BOUNDS = CL_TRAP_HEAP_OUT_OF_BOUNDS;
+inline constexpr TrapCode INTEGER_DIVISION_BY_ZERO = CL_TRAP_INTEGER_DIVISION_BY_ZERO;
+inline constexpr TrapCode BAD_CONVERSION_TO_INTEGER = CL_TRAP_BAD_CONVERSION_TO_INTEGER;
+
+// construct a user code from 1 through 250 or return zero and set the thread error
+inline TrapCode user(std::uint8_t code) noexcept {
+    return cl_trapcode_user(code);
+}
+
+}  // namespace trapcodes
 
 // return the most recent error for this thread which is not cleared after success
 inline const char* last_error() noexcept {
@@ -396,7 +461,7 @@ public:
     std::string ir() const {
         std::vector<ClIRComment> comments;
         for (const auto& comment : comments_)
-            comments.push_back({comment.instruction, comment.block, comment.text.c_str()});
+            comments.push_back({comment.instruction.raw(), comment.block.raw(), comment.text.c_str()});
 
         const std::size_t required
             = cl_context_display_with_comments(raw(), comments.data(), comments.size(), nullptr, 0);
@@ -413,7 +478,7 @@ public:
         return result;
     }
 
-    // Attach a display-only comment to an instruction in this function.
+    // attach a display comment to an instruction in this function
     void comment(Inst instruction, std::string text) {
         comments_.push_back({instruction, INVALID_ID, std::move(text)});
     }
@@ -514,32 +579,34 @@ public:
 
     // declare a named function and return its module identifier
     FuncId declare_function(const char* name, Linkage linkage, const Signature& signature) noexcept {
-        return cl_module_declare_function(raw(), name, static_cast<std::uint32_t>(linkage), signature.raw());
+        return FuncId{
+            cl_module_declare_function(raw(), name, static_cast<std::uint32_t>(linkage), signature.raw())};
     }
 
     // import a declared function into the given codegen context
     FuncRef declare_func_in_func(FuncId id, Context& context) noexcept {
-        return cl_module_declare_func_in_func(raw(), id, context.raw());
+        return FuncRef{cl_module_declare_func_in_func(raw(), id.raw(), context.raw())};
     }
 
     // compile and define a declared function from the codegen context once per func id
     bool define_function(FuncId id, Context& context) noexcept {
-        return cl_module_define_function(raw(), id, context.raw());
+        return cl_module_define_function(raw(), id.raw(), context.raw());
     }
 
     // declare a named data object and return its module identifier
     DataId declare_data(const char* name, Linkage linkage, bool writable, bool tls) noexcept {
-        return cl_module_declare_data(raw(), name, static_cast<std::uint32_t>(linkage), writable, tls);
+        return DataId{
+            cl_module_declare_data(raw(), name, static_cast<std::uint32_t>(linkage), writable, tls)};
     }
 
     // import a declared data object into the given codegen context
     GlobalValue declare_data_in_func(DataId id, Context& context) const noexcept {
-        return cl_module_declare_data_in_func(raw(), id, context.raw());
+        return GlobalValue{cl_module_declare_data_in_func(raw(), id.raw(), context.raw())};
     }
 
     // define a declared data object from its description
     bool define_data(DataId id, const DataDescription& description) noexcept {
-        return cl_module_define_data(raw(), id, description.raw());
+        return cl_module_define_data(raw(), id.raw(), description.raw());
     }
 
     // apply relocations and make all pending definitions callable or readable
@@ -548,7 +615,7 @@ public:
     // return the address of a compiled and finalized function
     // calling before finalization or with an invalid id can abort in the rust layer
     const void* get_finalized_function(FuncId id) const noexcept {
-        return cl_jit_module_get_finalized_function(raw(), id);
+        return cl_jit_module_get_finalized_function(raw(), id.raw());
     }
 
     // cast a finalized address to a function pointer whose signature and calling convention match
@@ -563,7 +630,7 @@ public:
     // return the address and size of finalized data
     std::pair<const void*, std::size_t> get_finalized_data(DataId id) const noexcept {
         std::size_t size = 0;
-        const void* address = cl_jit_module_get_finalized_data(raw(), id, &size);
+        const void* address = cl_jit_module_get_finalized_data(raw(), id.raw(), &size);
         return {address, size};
     }
 
@@ -588,46 +655,70 @@ inline bool Context::verify(const JITModule& module) const noexcept {
 
 class InstBuilder {
 public:
+    // terminate the current block with a native trap and the supplied reason code
+    // a zero code returns INVALID_ID and executing the trap raises a native machine exception
+    Inst trap(TrapCode code) const noexcept { return Inst{cl_ins_trap(builder_, code)}; }
+
+    // trap when the scalar integer condition is zero and continue normally otherwise
+    Inst trapz(Value condition, TrapCode code) const noexcept {
+        return Inst{cl_ins_trapz(builder_, condition.raw(), code)};
+    }
+
+    // trap when the scalar integer condition is nonzero and continue normally otherwise
+    Inst trapnz(Value condition, TrapCode code) const noexcept {
+        return Inst{cl_ins_trapnz(builder_, condition.raw(), code)};
+    }
+
+    // emit a native debugger breakpoint without terminating the block
+    Inst debugtrap() const noexcept { return Inst{cl_ins_debugtrap(builder_)}; }
+
+    // add matching unsigned scalar integers and trap with the supplied reason if the sum overflows
+    Value uadd_overflow_trap(Value left, Value right, TrapCode code) const noexcept {
+        return Value{cl_ins_uadd_overflow_trap(builder_, left.raw(), right.raw(), code)};
+    }
+
     // Emit a CLIR nop (does not generate a machine code nop).
-    Inst nop() const noexcept { return cl_ins_nop(builder_); }
+    Inst nop() const noexcept { return Inst{cl_ins_nop(builder_)}; }
 
     // borrow the active function builder for instruction insertion
     explicit InstBuilder(ClFunctionBuilder* builder) noexcept : builder_(builder) {}
 
     // insert an integer constant with the given type
     Value iconst(Type type, std::int64_t immediate) const noexcept {
-        return cl_ins_iconst(builder_, type, immediate);
+        return Value{cl_ins_iconst(builder_, type, immediate)};
     }
 
     // insert an f32 constant from its bit pattern
-    Value f32const(std::uint32_t bits) const noexcept { return cl_ins_f32const(builder_, bits); }
+    Value f32const(std::uint32_t bits) const noexcept { return Value{cl_ins_f32const(builder_, bits)}; }
 
     // insert an f64 constant from its bit pattern
-    Value f64const(std::uint64_t bits) const noexcept { return cl_ins_f64const(builder_, bits); }
+    Value f64const(std::uint64_t bits) const noexcept { return Value{cl_ins_f64const(builder_, bits)}; }
 
     // insert the address of an imported global value
     Value symbol_value(Type type, GlobalValue global) const noexcept {
-        return cl_ins_symbol_value(builder_, type, global);
+        return Value{cl_ins_symbol_value(builder_, type, global.raw())};
     }
 
     // define direct wrappers for binary cranelift instructions
 #define CL_BINARY_METHOD(name)                                                                               \
-    Value name(Value left, Value right) const noexcept { return cl_ins_##name(builder_, left, right); }
+    Value name(Value left, Value right) const noexcept {                                                     \
+        return Value{cl_ins_##name(builder_, left.raw(), right.raw())};                                      \
+    }
 
     // add two integer values
     CL_BINARY_METHOD(iadd)
 
     // add equal-width scalar integers and return the sum followed by an i8 unsigned overflow flag
     std::pair<Value, Value> uadd_overflow(Value left, Value right) const noexcept {
-        const auto result = cl_ins_uadd_overflow(builder_, left, right);
-        return {result.first, result.second};
+        const auto result = cl_ins_uadd_overflow(builder_, left.raw(), right.raw());
+        return {Value{result.first}, Value{result.second}};
     }
 
     // include an i8 carry input where nonzero means one and return the sum followed by an i8 overflow flag
     // the pinned x64 backend currently rejects this instruction during compilation
     std::pair<Value, Value> uadd_overflow_cin(Value left, Value right, Value carry_in) const noexcept {
-        const auto result = cl_ins_uadd_overflow_cin(builder_, left, right, carry_in);
-        return {result.first, result.second};
+        const auto result = cl_ins_uadd_overflow_cin(builder_, left.raw(), right.raw(), carry_in.raw());
+        return {Value{result.first}, Value{result.second}};
     }
 
     // subtract the right integer from the left integer
@@ -635,6 +726,18 @@ public:
 
     // multiply two integer values
     CL_BINARY_METHOD(imul)
+
+    // choose the larger integer using unsigned comparison with matching operand types
+    CL_BINARY_METHOD(umax)
+
+    // choose the smaller integer using unsigned comparison with matching operand types
+    CL_BINARY_METHOD(umin)
+
+    // choose the larger integer using signed comparison with matching operand types
+    CL_BINARY_METHOD(smax)
+
+    // choose the smaller integer using signed comparison with matching operand types
+    CL_BINARY_METHOD(smin)
 
     // compute the bitwise and of two integer values
     CL_BINARY_METHOD(band)
@@ -686,274 +789,293 @@ public:
 #undef CL_BINARY_METHOD
 
     // negate an integer value
-    Value ineg(Value value) const noexcept { return cl_ins_ineg(builder_, value); }
+    Value ineg(Value value) const noexcept { return Value{cl_ins_ineg(builder_, value.raw())}; }
 
     // invert every bit of an integer value
-    Value bnot(Value value) const noexcept { return cl_ins_bnot(builder_, value); }
+    Value bnot(Value value) const noexcept { return Value{cl_ins_bnot(builder_, value.raw())}; }
 
     // count leading zero bits with a result of the same type and the input bit width for zero
-    Value clz(Value value) const noexcept { return cl_ins_clz(builder_, value); }
+    Value clz(Value value) const noexcept { return Value{cl_ins_clz(builder_, value.raw())}; }
 
     // count trailing zero bits with a result of the same type and the input bit width for zero
-    Value ctz(Value value) const noexcept { return cl_ins_ctz(builder_, value); }
+    Value ctz(Value value) const noexcept { return Value{cl_ins_ctz(builder_, value.raw())}; }
 
     // count set bits with a result of the same type as the input
-    Value popcnt(Value value) const noexcept { return cl_ins_popcnt(builder_, value); }
+    Value popcnt(Value value) const noexcept { return Value{cl_ins_popcnt(builder_, value.raw())}; }
 
     // reverse the byte order of an integer value
-    Value bswap(Value value) const noexcept { return cl_ins_bswap(builder_, value); }
+    Value bswap(Value value) const noexcept { return Value{cl_ins_bswap(builder_, value.raw())}; }
 
     // narrow an integer value to the given type
-    Value ireduce(Type type, Value value) const noexcept { return cl_ins_ireduce(builder_, type, value); }
+    Value ireduce(Type type, Value value) const noexcept {
+        return Value{cl_ins_ireduce(builder_, type, value.raw())};
+    }
 
     // widen an integer value with zero extension
-    Value uextend(Type type, Value value) const noexcept { return cl_ins_uextend(builder_, type, value); }
+    Value uextend(Type type, Value value) const noexcept {
+        return Value{cl_ins_uextend(builder_, type, value.raw())};
+    }
 
     // widen an integer value with sign extension
-    Value sextend(Type type, Value value) const noexcept { return cl_ins_sextend(builder_, type, value); }
+    Value sextend(Type type, Value value) const noexcept {
+        return Value{cl_ins_sextend(builder_, type, value.raw())};
+    }
 
     // add a signed immediate to an integer value
     Value iadd_imm(Value value, std::int64_t immediate) const noexcept {
-        return cl_ins_iadd_imm(builder_, value, immediate);
+        return Value{cl_ins_iadd_imm(builder_, value.raw(), immediate)};
     }
 
     // add an immediate to an integer with a sign-extended immediate
     Value iadd_imm_s(Value value, std::int64_t immediate) const noexcept {
-        return cl_ins_iadd_imm_s(builder_, value, immediate);
+        return Value{cl_ins_iadd_imm_s(builder_, value.raw(), immediate)};
     }
 
     // add an immediate to an integer with a zero-extended immediate
     Value iadd_imm_u(Value value, std::uint64_t immediate) const noexcept {
-        return cl_ins_iadd_imm_u(builder_, value, immediate);
+        return Value{cl_ins_iadd_imm_u(builder_, value.raw(), immediate)};
     }
 
     // multiply an integer by an immediate with a sign-extended immediate
     Value imul_imm_s(Value value, std::int64_t immediate) const noexcept {
-        return cl_ins_imul_imm_s(builder_, value, immediate);
+        return Value{cl_ins_imul_imm_s(builder_, value.raw(), immediate)};
     }
 
     // multiply an integer by an immediate with a zero-extended immediate
     Value imul_imm_u(Value value, std::uint64_t immediate) const noexcept {
-        return cl_ins_imul_imm_u(builder_, value, immediate);
+        return Value{cl_ins_imul_imm_u(builder_, value.raw(), immediate)};
     }
 
     // divide an unsigned integer by an immediate with a sign-extended immediate
     Value udiv_imm_s(Value value, std::int64_t immediate) const noexcept {
-        return cl_ins_udiv_imm_s(builder_, value, immediate);
+        return Value{cl_ins_udiv_imm_s(builder_, value.raw(), immediate)};
     }
 
     // divide an unsigned integer by an immediate with a zero-extended immediate
     Value udiv_imm_u(Value value, std::uint64_t immediate) const noexcept {
-        return cl_ins_udiv_imm_u(builder_, value, immediate);
+        return Value{cl_ins_udiv_imm_u(builder_, value.raw(), immediate)};
     }
 
     // divide a signed integer by an immediate with a sign-extended immediate
     Value sdiv_imm_s(Value value, std::int64_t immediate) const noexcept {
-        return cl_ins_sdiv_imm_s(builder_, value, immediate);
+        return Value{cl_ins_sdiv_imm_s(builder_, value.raw(), immediate)};
     }
 
     // divide a signed integer by an immediate with a zero-extended immediate
     Value sdiv_imm_u(Value value, std::uint64_t immediate) const noexcept {
-        return cl_ins_sdiv_imm_u(builder_, value, immediate);
+        return Value{cl_ins_sdiv_imm_u(builder_, value.raw(), immediate)};
     }
 
     // compute the unsigned remainder with an immediate divisor with a sign-extended immediate
     Value urem_imm_s(Value value, std::int64_t immediate) const noexcept {
-        return cl_ins_urem_imm_s(builder_, value, immediate);
+        return Value{cl_ins_urem_imm_s(builder_, value.raw(), immediate)};
     }
 
     // compute the unsigned remainder with an immediate divisor with a zero-extended immediate
     Value urem_imm_u(Value value, std::uint64_t immediate) const noexcept {
-        return cl_ins_urem_imm_u(builder_, value, immediate);
+        return Value{cl_ins_urem_imm_u(builder_, value.raw(), immediate)};
     }
 
     // compute the signed remainder with an immediate divisor with a sign-extended immediate
     Value srem_imm_s(Value value, std::int64_t immediate) const noexcept {
-        return cl_ins_srem_imm_s(builder_, value, immediate);
+        return Value{cl_ins_srem_imm_s(builder_, value.raw(), immediate)};
     }
 
     // compute the signed remainder with an immediate divisor with a zero-extended immediate
     Value srem_imm_u(Value value, std::uint64_t immediate) const noexcept {
-        return cl_ins_srem_imm_u(builder_, value, immediate);
+        return Value{cl_ins_srem_imm_u(builder_, value.raw(), immediate)};
     }
 
     // apply bitwise and with an immediate with a sign-extended immediate
     Value band_imm_s(Value value, std::int64_t immediate) const noexcept {
-        return cl_ins_band_imm_s(builder_, value, immediate);
+        return Value{cl_ins_band_imm_s(builder_, value.raw(), immediate)};
     }
 
     // apply bitwise and with an immediate with a zero-extended immediate
     Value band_imm_u(Value value, std::uint64_t immediate) const noexcept {
-        return cl_ins_band_imm_u(builder_, value, immediate);
+        return Value{cl_ins_band_imm_u(builder_, value.raw(), immediate)};
     }
 
     // apply bitwise or with an immediate with a sign-extended immediate
     Value bor_imm_s(Value value, std::int64_t immediate) const noexcept {
-        return cl_ins_bor_imm_s(builder_, value, immediate);
+        return Value{cl_ins_bor_imm_s(builder_, value.raw(), immediate)};
     }
 
     // apply bitwise or with an immediate with a zero-extended immediate
     Value bor_imm_u(Value value, std::uint64_t immediate) const noexcept {
-        return cl_ins_bor_imm_u(builder_, value, immediate);
+        return Value{cl_ins_bor_imm_u(builder_, value.raw(), immediate)};
     }
 
     // apply bitwise xor with an immediate with a sign-extended immediate
     Value bxor_imm_s(Value value, std::int64_t immediate) const noexcept {
-        return cl_ins_bxor_imm_s(builder_, value, immediate);
+        return Value{cl_ins_bxor_imm_s(builder_, value.raw(), immediate)};
     }
 
     // apply bitwise xor with an immediate with a zero-extended immediate
     Value bxor_imm_u(Value value, std::uint64_t immediate) const noexcept {
-        return cl_ins_bxor_imm_u(builder_, value, immediate);
+        return Value{cl_ins_bxor_imm_u(builder_, value.raw(), immediate)};
     }
 
     // rotate an integer left by an immediate with a sign-extended immediate
     Value rotl_imm_s(Value value, std::int64_t immediate) const noexcept {
-        return cl_ins_rotl_imm_s(builder_, value, immediate);
+        return Value{cl_ins_rotl_imm_s(builder_, value.raw(), immediate)};
     }
 
     // rotate an integer left by an immediate with a zero-extended immediate
     Value rotl_imm_u(Value value, std::uint64_t immediate) const noexcept {
-        return cl_ins_rotl_imm_u(builder_, value, immediate);
+        return Value{cl_ins_rotl_imm_u(builder_, value.raw(), immediate)};
     }
 
     // rotate an integer right by an immediate with a sign-extended immediate
     Value rotr_imm_s(Value value, std::int64_t immediate) const noexcept {
-        return cl_ins_rotr_imm_s(builder_, value, immediate);
+        return Value{cl_ins_rotr_imm_s(builder_, value.raw(), immediate)};
     }
 
     // rotate an integer right by an immediate with a zero-extended immediate
     Value rotr_imm_u(Value value, std::uint64_t immediate) const noexcept {
-        return cl_ins_rotr_imm_u(builder_, value, immediate);
+        return Value{cl_ins_rotr_imm_u(builder_, value.raw(), immediate)};
     }
 
     // shift an integer left by an immediate with a sign-extended immediate
     Value ishl_imm_s(Value value, std::int64_t immediate) const noexcept {
-        return cl_ins_ishl_imm_s(builder_, value, immediate);
+        return Value{cl_ins_ishl_imm_s(builder_, value.raw(), immediate)};
     }
 
     // shift an integer left by an immediate with a zero-extended immediate
     Value ishl_imm_u(Value value, std::uint64_t immediate) const noexcept {
-        return cl_ins_ishl_imm_u(builder_, value, immediate);
+        return Value{cl_ins_ishl_imm_u(builder_, value.raw(), immediate)};
     }
 
     // shift an integer right without sign extension by an immediate with a sign-extended immediate
     Value ushr_imm_s(Value value, std::int64_t immediate) const noexcept {
-        return cl_ins_ushr_imm_s(builder_, value, immediate);
+        return Value{cl_ins_ushr_imm_s(builder_, value.raw(), immediate)};
     }
 
     // shift an integer right without sign extension by an immediate with a zero-extended immediate
     Value ushr_imm_u(Value value, std::uint64_t immediate) const noexcept {
-        return cl_ins_ushr_imm_u(builder_, value, immediate);
+        return Value{cl_ins_ushr_imm_u(builder_, value.raw(), immediate)};
     }
 
     // shift an integer right with sign extension by an immediate with a sign-extended immediate
     Value sshr_imm_s(Value value, std::int64_t immediate) const noexcept {
-        return cl_ins_sshr_imm_s(builder_, value, immediate);
+        return Value{cl_ins_sshr_imm_s(builder_, value.raw(), immediate)};
     }
 
     // shift an integer right with sign extension by an immediate with a zero-extended immediate
     Value sshr_imm_u(Value value, std::uint64_t immediate) const noexcept {
-        return cl_ins_sshr_imm_u(builder_, value, immediate);
+        return Value{cl_ins_sshr_imm_u(builder_, value.raw(), immediate)};
     }
 
     // the suffix selects immediate extension and the condition selects comparison signedness
     // scalar comparison results have type i8 and vector results use the corresponding lane mask type
     Value icmp_imm_s(IntCC condition, Value value, std::int64_t immediate) const noexcept {
-        return cl_ins_icmp_imm_s(builder_, static_cast<std::uint32_t>(condition), value, immediate);
+        return Value{
+            cl_ins_icmp_imm_s(builder_, static_cast<std::uint32_t>(condition), value.raw(), immediate)};
     }
 
     // compare against a zero-extended immediate with the supplied signed or unsigned condition
     Value icmp_imm_u(IntCC condition, Value value, std::uint64_t immediate) const noexcept {
-        return cl_ins_icmp_imm_u(builder_, static_cast<std::uint32_t>(condition), value, immediate);
+        return Value{
+            cl_ins_icmp_imm_u(builder_, static_cast<std::uint32_t>(condition), value.raw(), immediate)};
     }
 
     // compare with a signed immediate using the historical helper behavior
     Value icmp_imm(IntCC condition, Value value, std::int64_t immediate) const noexcept {
-        return cl_ins_icmp_imm(builder_, static_cast<std::uint32_t>(condition), value, immediate);
+        return Value{
+            cl_ins_icmp_imm(builder_, static_cast<std::uint32_t>(condition), value.raw(), immediate)};
     }
 
     // compare two integers using the given condition
     Value icmp(IntCC condition, Value left, Value right) const noexcept {
-        return cl_ins_icmp(builder_, static_cast<std::uint32_t>(condition), left, right);
+        return Value{cl_ins_icmp(builder_, static_cast<std::uint32_t>(condition), left.raw(), right.raw())};
     }
 
     // select one of two values according to a condition
     Value select(Value condition, Value if_true, Value if_false) const noexcept {
-        return cl_ins_select(builder_, condition, if_true, if_false);
+        return Value{cl_ins_select(builder_, condition.raw(), if_true.raw(), if_false.raw())};
     }
 
     // select each bit from if_true where the mask bit is set and from if_false otherwise
     // all operands must have the same type and the result is (mask & if_true) | (~mask & if_false)
     Value bitselect(Value mask, Value if_true, Value if_false) const noexcept {
-        return cl_ins_bitselect(builder_, mask, if_true, if_false);
+        return Value{cl_ins_bitselect(builder_, mask.raw(), if_true.raw(), if_false.raw())};
     }
 
     // jump to a block and pass its block arguments
-    Inst jump(Block destination, std::span<const Value> args = {}) const noexcept {
-        return cl_ins_jump(builder_, destination, args.data(), args.size());
+    Inst jump(Block destination, std::span<const Value> args = {}) const {
+        const detail::RawValues raw_args(args);
+        return Inst{cl_ins_jump(builder_, destination.raw(), raw_args.data(), args.size())};
     }
 
     // jump to a block with an inline list of block arguments
-    Inst jump(Block destination, std::initializer_list<Value> args) const noexcept {
+    Inst jump(Block destination, std::initializer_list<Value> args) const {
         return jump(destination, std::span<const Value>(args.begin(), args.size()));
     }
 
     // branch to one of two blocks and pass their block arguments
     Inst brif(Value condition, Block then_block, std::span<const Value> then_args, Block else_block,
-              std::span<const Value> else_args) const noexcept {
-        return cl_ins_brif(builder_, condition, then_block, then_args.data(), then_args.size(), else_block,
-                           else_args.data(), else_args.size());
+              std::span<const Value> else_args) const {
+        const detail::RawValues raw_then_args(then_args);
+        const detail::RawValues raw_else_args(else_args);
+        return Inst{cl_ins_brif(builder_, condition.raw(), then_block.raw(), raw_then_args.data(),
+                                then_args.size(), else_block.raw(), raw_else_args.data(), else_args.size())};
     }
 
     // branch to one of two blocks with inline block argument lists
     Inst brif(Value condition, Block then_block, std::initializer_list<Value> then_args, Block else_block,
-              std::initializer_list<Value> else_args) const noexcept {
+              std::initializer_list<Value> else_args) const {
         return brif(condition, then_block, std::span<const Value>(then_args.begin(), then_args.size()),
                     else_block, std::span<const Value>(else_args.begin(), else_args.size()));
     }
 
     // return values from the current function
-    Inst return_(std::span<const Value> values = {}) const noexcept {
-        return cl_ins_return(builder_, values.data(), values.size());
+    Inst return_(std::span<const Value> values = {}) const {
+        const detail::RawValues raw_values(values);
+        return Inst{cl_ins_return(builder_, raw_values.data(), values.size())};
     }
 
     // return one value without creating a temporary array
-    Inst return_(Value value) const noexcept { return cl_ins_return(builder_, &value, 1); }
+    Inst return_(Value value) const noexcept {
+        const ClValue id = value.raw();
+        return Inst{cl_ins_return(builder_, &id, 1)};
+    }
 
     // return an inline list of values
-    Inst return_(std::initializer_list<Value> values) const noexcept {
+    Inst return_(std::initializer_list<Value> values) const {
         return return_(std::span<const Value>(values.begin(), values.size()));
     }
 
     // call an imported function with the given arguments
-    Inst call(FuncRef function, std::span<const Value> args = {}) const noexcept {
-        return cl_ins_call(builder_, function, args.data(), args.size());
+    Inst call(FuncRef function, std::span<const Value> args = {}) const {
+        const detail::RawValues raw_args(args);
+        return Inst{cl_ins_call(builder_, function.raw(), raw_args.data(), args.size())};
     }
 
     // call an imported function with an inline argument list
-    Inst call(FuncRef function, std::initializer_list<Value> args) const noexcept {
+    Inst call(FuncRef function, std::initializer_list<Value> args) const {
         return call(function, std::span<const Value>(args.begin(), args.size()));
     }
 
     // call a function pointer using an imported signature
-    Inst call_indirect(SigRef signature, Value callee, std::span<const Value> args = {}) const noexcept {
-        return cl_ins_call_indirect(builder_, signature, callee, args.data(), args.size());
+    Inst call_indirect(SigRef signature, Value callee, std::span<const Value> args = {}) const {
+        const detail::RawValues raw_args(args);
+        return Inst{
+            cl_ins_call_indirect(builder_, signature.raw(), callee.raw(), raw_args.data(), args.size())};
     }
 
     // call a function pointer with an inline argument list
-    Inst call_indirect(SigRef signature, Value callee, std::initializer_list<Value> args) const noexcept {
+    Inst call_indirect(SigRef signature, Value callee, std::initializer_list<Value> args) const {
         return call_indirect(signature, callee, std::span<const Value>(args.begin(), args.size()));
     }
 
     // load a typed value from an address and byte offset
     Value load(Type type, MemFlags flags, Value address, std::int32_t offset) const noexcept {
-        return cl_ins_load(builder_, type, flags, address, offset);
+        return Value{cl_ins_load(builder_, type, flags, address.raw(), offset)};
     }
 
     // store a value at an address and byte offset
     Inst store(MemFlags flags, Value value, Value address, std::int32_t offset) const noexcept {
-        return cl_ins_store(builder_, flags, value, address, offset);
+        return Inst{cl_ins_store(builder_, flags, value.raw(), address.raw(), offset)};
     }
 
 private:
@@ -969,11 +1091,11 @@ public:
 
     void comment(Inst instruction, std::string text) { context_->comment(instruction, std::move(text)); }
     bool comment(std::string text) {
-        Block block;
-        Inst previous;
+        ClBlock block;
+        ClInst previous;
         if (!cl_builder_comment_position(raw(), &block, &previous))
             return false;
-        context_->comment_at(block, previous, std::move(text));
+        context_->comment_at(Block{block}, Inst{previous}, std::move(text));
         return true;
     }
 
@@ -990,59 +1112,61 @@ public:
     }
 
     // create a new basic block
-    Block create_block() noexcept { return cl_builder_create_block(raw()); }
+    Block create_block() noexcept { return Block{cl_builder_create_block(raw())}; }
 
     // select the block that receives subsequent instructions
-    void switch_to_block(Block block) noexcept { cl_builder_switch_to_block(raw(), block); }
+    void switch_to_block(Block block) noexcept { cl_builder_switch_to_block(raw(), block.raw()); }
 
     // seal a block after all predecessors are known
-    void seal_block(Block block) noexcept { cl_builder_seal_block(raw(), block); }
+    void seal_block(Block block) noexcept { cl_builder_seal_block(raw(), block.raw()); }
 
     // seal every block after all predecessor edges have been emitted
     void seal_all_blocks() noexcept { cl_builder_seal_all_blocks(raw()); }
 
     // append the function parameters to a block
     void append_block_params_for_function_params(Block block) noexcept {
-        cl_builder_append_block_params_for_function_params(raw(), block);
+        cl_builder_append_block_params_for_function_params(raw(), block.raw());
     }
 
     // append a typed parameter to a block and return its value id
     Value append_block_param(Block block, Type type) noexcept {
-        return cl_builder_append_block_param(raw(), block, type);
+        return Value{cl_builder_append_block_param(raw(), block.raw(), type)};
     }
 
     // return a block parameter by index
     Value block_param(Block block, std::size_t index) const noexcept {
-        return cl_builder_block_param(raw(), block, index);
+        return Value{cl_builder_block_param(raw(), block.raw(), index)};
     }
 
     // declare a mutable variable of the given type
-    Variable declare_var(Type type) noexcept { return cl_builder_declare_var(raw(), type); }
+    Variable declare_var(Type type) noexcept { return Variable{cl_builder_declare_var(raw(), type)}; }
 
     // assign a value to a declared variable
-    void def_var(Variable variable, Value value) noexcept { cl_builder_def_var(raw(), variable, value); }
+    void def_var(Variable variable, Value value) noexcept {
+        cl_builder_def_var(raw(), variable.raw(), value.raw());
+    }
 
     // read the current value of a declared variable
-    Value use_var(Variable variable) noexcept { return cl_builder_use_var(raw(), variable); }
+    Value use_var(Variable variable) noexcept { return Value{cl_builder_use_var(raw(), variable.raw())}; }
 
     // return one result of an inserted instruction or INVALID_ID for a missing index
     Value inst_result(Inst instruction, std::size_t index) const noexcept {
-        return cl_builder_inst_result(raw(), instruction, index);
+        return Value{cl_builder_inst_result(raw(), instruction.raw(), index)};
     }
 
     // import a signature for indirect calls
     SigRef import_signature(const Signature& signature) noexcept {
-        return cl_builder_import_signature(raw(), signature.raw());
+        return SigRef{cl_builder_import_signature(raw(), signature.raw())};
     }
 
     // import a module function into the current function
     FuncRef declare_func_in_func(JITModule& module, FuncId id) noexcept {
-        return cl_builder_declare_func_in_func(module.raw(), id, raw());
+        return FuncRef{cl_builder_declare_func_in_func(module.raw(), id.raw(), raw())};
     }
 
     // import a module data object into the current function
     GlobalValue declare_data_in_func(const JITModule& module, DataId id) noexcept {
-        return cl_builder_declare_data_in_func(module.raw(), id, raw());
+        return GlobalValue{cl_builder_declare_data_in_func(module.raw(), id.raw(), raw())};
     }
 
     // create memory access flags for this function

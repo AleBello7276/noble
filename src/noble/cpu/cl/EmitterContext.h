@@ -77,11 +77,21 @@ public:
     cranelift::Value i32(size_t immediate) { return iconst(cranelift::types::I32(), immediate); }
     cranelift::Value i64(size_t immediate) { return iconst(cranelift::types::I64(), immediate); }
 
-    cranelift::Value zext(cranelift::Type dest_type, cranelift::Value value) {
-        return ins().uextend(dest_type, value);
+    // extend helpers
+    cranelift::Value zext16(cranelift::Value value) { return ins().uextend(cranelift::types::I16(), value); }
+    cranelift::Value zext32(cranelift::Value value) { return ins().uextend(cranelift::types::I32(), value); }
+    cranelift::Value zext64(cranelift::Value value) { return ins().uextend(cranelift::types::I64(), value); }
+    cranelift::Value sext16(cranelift::Value value) { return ins().sextend(cranelift::types::I16(), value); }
+    cranelift::Value sext32(cranelift::Value value) { return ins().sextend(cranelift::types::I32(), value); }
+    cranelift::Value sext64(cranelift::Value value) { return ins().sextend(cranelift::types::I64(), value); }
+
+    // truncate helpers
+    cranelift::Value reduce8(cranelift::Value value) { return ins().ireduce(cranelift::types::I8(), value); }
+    cranelift::Value reduce16(cranelift::Value value) {
+        return ins().ireduce(cranelift::types::I16(), value);
     }
-    cranelift::Value sext(cranelift::Type dest_type, cranelift::Value value) {
-        return ins().sextend(dest_type, value);
+    cranelift::Value reduce32(cranelift::Value value) {
+        return ins().ireduce(cranelift::types::I32(), value);
     }
 
     // load memory - ea

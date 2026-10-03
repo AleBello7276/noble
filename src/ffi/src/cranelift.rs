@@ -4,6 +4,7 @@
 use std::cell::RefCell;
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::ptr;
+use std::num::NonZeroU8;
 
 use cranelift_codegen::entity::EntityRef;
 use cranelift_codegen::ir::{condcodes::IntCC, types, AbiParam, Block, BlockArg, Endianness, FuncRef, GlobalValue, Inst, InstBuilder, MemFlags, MemFlagsData, SigRef, Signature, Type, Value};
@@ -14,6 +15,23 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{default_libcall_names, DataDescription, DataId, FuncId, Linkage, Module};
 
 const INVALID: u32 = u32::MAX;
+
+// decode a nonzero raw trap code without panicking across the c abi
+fn trapcode(code: u8) -> Option<cranelift_codegen::ir::TrapCode> {
+    match NonZeroU8::new(code) {
+        Some(code) => Some(cranelift_codegen::ir::TrapCode::from_raw(code)),
+        None => { error("invalid zero trap code"); None }
+    }
+}
+
+// construct a user trap code and return zero for reserved or invalid codes
+#[no_mangle]
+pub extern "C" fn cl_trapcode_user(code: u8) -> u8 {
+    match cranelift_codegen::ir::TrapCode::user(code) {
+        Some(code) => code.as_raw().get(),
+        None => { error("user trap code must be between 1 and 250"); 0 }
+    }
+}
 
 // preserve the order of two cranelift instruction results across the c abi
 #[repr(C)]
@@ -648,6 +666,14 @@ pub unsafe extern "C" fn cl_ins_uadd_overflow_cin(builder: *mut FunctionBuilder<
 
 binary_ins!(cl_ins_isub, isub);
 binary_ins!(cl_ins_imul, imul);
+// choose the larger integer using unsigned comparison
+binary_ins!(cl_ins_umax, umax);
+// choose the smaller integer using unsigned comparison
+binary_ins!(cl_ins_umin, umin);
+// choose the larger integer using signed comparison
+binary_ins!(cl_ins_smax, smax);
+// choose the smaller integer using signed comparison
+binary_ins!(cl_ins_smin, smin);
 binary_ins!(cl_ins_band, band);
 binary_ins!(cl_ins_bor, bor);
 binary_ins!(cl_ins_bxor, bxor);
@@ -794,6 +820,40 @@ pub unsafe extern "C" fn cl_ins_jump(builder: *mut FunctionBuilder<'static>, des
     let Some(args) = values(args, len) else { return INVALID };
     let args: Vec<BlockArg> = args.into_iter().map(Into::into).collect();
     (*builder).ins().jump(Block::from_u32(destination), &args).as_u32()
+}
+
+// terminate the current block with a native trap carrying the supplied reason code
+#[no_mangle]
+pub unsafe extern "C" fn cl_ins_trap(builder: *mut FunctionBuilder<'static>, code: u8) -> u32 {
+    let Some(code) = trapcode(code) else { return INVALID };
+    (*builder).ins().trap(code).as_u32()
+}
+
+// emit a native trap when the scalar integer condition is zero
+#[no_mangle]
+pub unsafe extern "C" fn cl_ins_trapz(builder: *mut FunctionBuilder<'static>, condition: u32, code: u8) -> u32 {
+    let Some(code) = trapcode(code) else { return INVALID };
+    (*builder).ins().trapz(Value::from_u32(condition), code).as_u32()
+}
+
+// emit a native trap when the scalar integer condition is nonzero
+#[no_mangle]
+pub unsafe extern "C" fn cl_ins_trapnz(builder: *mut FunctionBuilder<'static>, condition: u32, code: u8) -> u32 {
+    let Some(code) = trapcode(code) else { return INVALID };
+    (*builder).ins().trapnz(Value::from_u32(condition), code).as_u32()
+}
+
+// emit a native debugger breakpoint without terminating the block
+#[no_mangle]
+pub unsafe extern "C" fn cl_ins_debugtrap(builder: *mut FunctionBuilder<'static>) -> u32 {
+    (*builder).ins().debugtrap().as_u32()
+}
+
+// add unsigned scalar integers and trap with the supplied reason if the sum overflows
+#[no_mangle]
+pub unsafe extern "C" fn cl_ins_uadd_overflow_trap(builder: *mut FunctionBuilder<'static>, left: u32, right: u32, code: u8) -> u32 {
+    let Some(code) = trapcode(code) else { return INVALID };
+    (*builder).ins().uadd_overflow_trap(Value::from_u32(left), Value::from_u32(right), code).as_u32()
 }
 
 #[no_mangle]

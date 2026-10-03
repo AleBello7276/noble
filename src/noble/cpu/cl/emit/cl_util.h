@@ -107,7 +107,7 @@ inline Value emit_load_value(EmitterContext& e_, Value ea) {
 
     // don't zero extend to 64 if already 64
     if constexpr (Bits < 64)
-        value = e_.zext(types::I64(), value);
+        value = e_.zext64(value);
 
     return value;
 }
