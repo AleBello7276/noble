@@ -73,10 +73,28 @@ void Registry::MissingImport(Registry*, PPCContext* cpu, uint32_t library, uint3
     cpu->FaultAddress = thunkAddress;
 
     try {
+        const char* libraryName = "unknown";
+        switch (static_cast<XboxLibrary>(library)) {
+        case XboxLibrary::XboxKrnl:
+            libraryName = "xboxkrnl.exe";
+            break;
+        case XboxLibrary::Xam:
+            libraryName = "xam.xex";
+            break;
+        case XboxLibrary::Xbdm:
+            libraryName = "xbdm.xex";
+            break;
+        case XboxLibrary::Xapi:
+            libraryName = "xapi.xex";
+            break;
+        default:
+            break;
+        }
+
         const auto* definition
             = XLoader::FindImport(static_cast<XboxLibrary>(library), static_cast<uint16_t>(ordinal));
 
-        LOG_ERROR("Unimplemented HLE import {} ordinal 0x{:04X} at 0x{:08X}",
+        LOG_ERROR("Unimplemented HLE import {}!{} ordinal 0x{:04X} at guest thunk 0x{:08X}", libraryName,
                   definition ? definition->name : "unknown", ordinal, thunkAddress);
     } catch (...) {
     }

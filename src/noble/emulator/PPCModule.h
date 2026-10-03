@@ -1,4 +1,7 @@
+#pragma once
+
 #include <memory>
+#include <span>
 #include <unordered_map>
 
 #include "Loader/ImageLoader.h"
@@ -43,6 +46,8 @@ struct PPCFuncMap {
     bool mInPdata;
 };
 
+class Memory;
+
 class PPCModule {
 public:
     std::string mPath;
@@ -55,6 +60,12 @@ public:
 
     PPCModule();
     PPCModule(std::string path, bool useCache = false, bool isKernel = false);
+
+    // build guest block edges from instruction bytes for a single function or entry
+    static void BuildFunctionCFG(PPCFuncMap& function, std::span<const uint8_t> code);
+
+    // scan one basic block with a limit of 256 instructions when no function bounds are known
+    static PPCFuncMap AnalyseJITBlock(Memory& memory, GuestAddress address, uint64_t limit);
 
     /* Guest start and end addresses of .text section */
     GuestAddress GetCodeStart() { return mCodeStart_; }
@@ -77,6 +88,6 @@ private:
     void BuildFunctionCFG(XLoader::Section* text);
 
 private:
-    GuestAddress mCodeStart_;
-    GuestAddress mCodeEnd_;
+    GuestAddress mCodeStart_ = 0;
+    GuestAddress mCodeEnd_ = 0;
 };

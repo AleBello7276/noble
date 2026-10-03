@@ -23,6 +23,8 @@ struct ExecutionResult {
 class CpuExecutor {
 public:
     CpuExecutor(Memory& memory);
+
+    // execute from cia and follow nia until termination, shutdown or a guest fault
     ExecutionResult Execute(PPCContext& context, const std::atomic_bool& terminate, std::stop_token stop);
 
     JITBackend* jit() { return jit_.get(); }

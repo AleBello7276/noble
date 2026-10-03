@@ -13,6 +13,7 @@ inline constexpr auto emitter_dispatch_table = [] {
 
     table[to_underlying(PpcOpcode::B)] = &cl_b_handler;
     table[to_underlying(PpcOpcode::Bc)] = &cl_bc_handler;
+    table[to_underlying(PpcOpcode::Bclr)] = &cl_bclr_handler;
     table[to_underlying(PpcOpcode::Bcctr)] = &cl_bcctr_handler;
 
     table[to_underlying(PpcOpcode::Addis)] = &cl_addis_handler;

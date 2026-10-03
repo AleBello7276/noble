@@ -73,8 +73,15 @@ bool Emulator::Run() {
     if (!mInitialThread_)
         return false;
 
-    // compile and map boot module
-    cpu_.jit()->CompilePPCModule(mStartModule);
+    // register boot metadata and compile only the guest entry point
+    cpu_.jit()->RegisterPPCModule(mStartModule);
+
+    const GuestAddress entry = mStartModule.mImage->getEntryPoint();
+    cpu_.jit()->CompileJITBlock(entry);
+
+    // something went wrong
+    if (!cpu_.jit()->FindBlock(entry))
+        return false;
 
     // wake scheduler and wait for main thread to start
     mScheduler_.Start();

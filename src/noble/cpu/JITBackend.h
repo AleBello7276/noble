@@ -24,10 +24,13 @@ public:
     /* get a compiled block from guest entry address */
     virtual JITBlock FindBlock(GuestAddress address) const = 0;
 
+    // register module bounds and patch import slots without compiling guest code
+    virtual void RegisterPPCModule(const PPCModule& module) = 0;
+
     /* jit all blocks in a PPCModule which does function bound analysis and simple cfg at load */
     virtual void CompilePPCModule(PPCModule& module) = 0;
 
-    /* JIT a block of instructions at address in guest memory */
+    // compile the exact guest entry on a cache miss
     virtual void CompileJITBlock(GuestAddress address) = 0;
 
     /* invalidate and remove block at address */

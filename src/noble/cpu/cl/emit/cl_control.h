@@ -139,6 +139,41 @@ CLHandler(bc) {
     e_.SwitchToBlock(b_False);
 }
 
+CLHandler(bclr) {
+    const auto bo = info_.mInst.field_bo();
+    const auto bi = info_.mInst.field_bi();
+    const bool lk = info_.mInst.field_lk();
+
+    // capture the old lr before lk replaces it with the return address
+    const Value target = e_.ins().band(e_.ins().ireduce(types::I32(), e_.load_spr(eSPR::LR)), e_.i32(-4));
+
+    Value ctr_ok = e_.i8(1);
+    if ((bo & 4) == 0) {
+        const Value ctr = e_.ins().iadd_imm(e_.load_spr(eSPR::CTR), -1);
+        e_.store_spr(eSPR::CTR, ctr);
+        ctr_ok = e_.ins().icmp((bo & 2) ? IntCC::CL_INTCC_EQUAL : IntCC::CL_INTCC_NOT_EQUAL, ctr, e_.i64(0));
+    }
+
+    Value cond_ok = e_.i8(1);
+    if ((bo & 16) == 0)
+        cond_ok
+            = e_.ins().icmp(IntCC::CL_INTCC_EQUAL, e_.get_cr_field(bi >> 2, bi & 3), e_.i8((bo & 8) != 0));
+
+    if (lk)
+        e_.store_spr(eSPR::LR, e_.i64(info_.mAddress + 4));
+
+    const Block taken = e_.builder.create_block();
+    const Block skipped = e_.builder.create_block();
+    e_.Branch(e_.ins().band(ctr_ok, cond_ok), taken, {}, skipped, {});
+    e_.SwitchToBlock(taken);
+    branch_indirect(e_, info_, target, lk);
+
+    if (!e_.terminated)
+        e_.Jump(skipped);
+
+    e_.SwitchToBlock(skipped);
+}
+
 CLHandler(bcctr) {
     const auto bo = info_.mInst.field_bo();
     const auto bi = info_.mInst.field_bi();

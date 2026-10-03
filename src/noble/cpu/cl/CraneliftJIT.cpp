@@ -1,6 +1,7 @@
 #include "CraneliftJIT.h"
 
 #include "powerpc-rs.h"
+#include <algorithm>
 #include <assert.h>
 #include <cstring>
 #include <format>
@@ -27,176 +28,189 @@ CraneliftJIT::CraneliftJIT(Memory& memory) : memory_(memory), jit_module_(nullpt
         = jit_module_.declare_function("host_yield", cranelift::Linkage::CL_LINKAGE_IMPORT, yield_sig);
 }
 
-void CraneliftJIT::CompilePPCModule(PPCModule& module) {
-    using namespace cranelift;
-
+void CraneliftJIT::RegisterPPCModule(const PPCModule& module) {
     std::lock_guard lock(mutex_);
+    RegisterModule(module);
+}
 
+void CraneliftJIT::RegisterModule(const PPCModule& module) {
     if (!module.mImage)
-        throw std::invalid_argument("cannot compile a module without an image");
+        throw std::invalid_argument("module not an image");
 
-    // compile import entry points before instruction decoding can reach their placeholders
+    // retain metadata copies
+    for (const auto& section : module.mImage->getSections()) {
+        if (!section->isExecutable() || !section->getVirtualSize())
+            continue;
+
+        const uint64_t start = uint64_t(module.mImage->getBaseAddress()) + section->getVirtualAddress();
+        const uint64_t end = start + section->getVirtualSize();
+
+        if (start > UINT32_MAX || end > uint64_t(UINT32_MAX) + 1)
+            throw std::invalid_argument("executable section exceeds guest address space");
+
+        const auto duplicate
+            = std::find_if(codeRegions_.begin(), codeRegions_.end(), [&](const CodeRegion& region) {
+                  return region.start == start && region.end == end;
+              });
+
+        if (duplicate == codeRegions_.end())
+            codeRegions_.push_back({static_cast<GuestAddress>(start), end});
+    }
+
+    for (const auto& [address, bounds] : module.funcs_) {
+        if (address != bounds.mStart || bounds.mStart >= bounds.mEnd || ((bounds.mStart | bounds.mEnd) & 3))
+            throw std::invalid_argument("invalid registered function bounds");
+
+        functionBounds_.insert_or_assign(address, bounds);
+    }
     for (const auto& import : module.mImage->getImports()) {
-        // not a function
         if (import->type != ImportType::Function || !import->funcImportAddr)
             continue;
 
-        // add address to map
         const auto [it, inserted] = importsByAddress_.try_emplace(import->funcImportAddr, *import);
         if (!inserted && (it->second.library != import->library || it->second.ordinal != import->ordinal))
             throw std::runtime_error("conflicting imports at the same guest address");
 
-        // compile direct import hle call
-        CompileImport(it->second);
-
-        // update table in guest memory
         if (import->tableAddr) {
             auto* slot = memory_.Translate(import->tableAddr, sizeof(uint32_t));
-
             if (!slot)
                 throw std::runtime_error("unmapped import address table slot");
 
-            const uint32_t address = byte_swap(import->funcImportAddr);
-            std::memcpy(slot, &address, sizeof(address));
+            const uint32_t target = byte_swap(import->funcImportAddr);
+            std::memcpy(slot, &target, sizeof(target));
         }
     }
+}
 
-    FunctionBuilderContext _builderContext;  // reusable builder context
+void CraneliftJIT::CompilePPCModule(PPCModule& module) {
+    std::lock_guard lock(mutex_);
+    RegisterModule(module);
 
-    for (auto& [key, bounds] : module.funcs_) {
-        const GuestAddress funcStart = bounds.mStart;
-        const GuestAddress funcEnd = bounds.mEnd;
+    for (const auto& import : module.mImage->getImports())
+        if (import->type == ImportType::Function && import->funcImportAddr)
+            CompileImport(*import);
 
-        // skip already compiled function
-        if (compiledBlocks_.contains(funcStart))
-            continue;
+    for (const auto& [address, bounds] : module.funcs_)
+        if (!importsByAddress_.contains(address) && !CompileFunction(bounds))
+            return;
+}
 
-        cranelift::Context funcContext = jit_module_.make_context();
+bool CraneliftJIT::CompileFunction(const PPCFuncMap& bounds) {
+    using namespace cranelift;
+    const GuestAddress funcStart = bounds.mStart;
+    const GuestAddress funcEnd = bounds.mEnd;
 
-        /* jitted guest entry prototpype is void <>(PPCContext* state, void* mem_base) */
-        cranelift::Signature funcSig = funcContext.signature();
-        funcSig.push_param(cranelift::types::Pointer(jit_module_));
-        funcSig.push_param(cranelift::types::Pointer(jit_module_));
+    if (compiledBlocks_.contains(funcStart))
+        return true;
 
-        std::string name = std::format("{:08X}", funcStart);  // hex rappresentation
-        cranelift::FuncId funcID = jit_module_.declare_function(name.c_str(), CL_LINKAGE_EXPORT, funcSig);
+    if (funcStart >= funcEnd || ((funcStart | funcEnd) & 3))
+        throw std::invalid_argument("invalid jit function bounds");
 
-        FunctionBuilder _builder{funcContext, _builderContext};
+    const size_t size = uint64_t(funcEnd) - funcStart;
+    const auto* pointer = static_cast<const uint8_t*>(memory_.Translate(funcStart, size));
 
-        // make entry block
-        Block entry = _builder.create_block();
-        _builder.append_block_params_for_function_params(entry);
-        _builder.switch_to_block(entry);
+    if (!pointer)
+        throw std::invalid_argument("unmapped jit instruction range");
 
-        Value state = _builder.block_param(entry, 0);
-        Value base = _builder.block_param(entry, 1);
+    const std::span<const uint8_t> bytes(pointer, size);
+    PPCFuncMap analyzed = bounds;
+    PPCModule::BuildFunctionCFG(analyzed, bytes);
 
-        // per function / compilation jit block context
-        EmitterContext emitter(bounds, state, base, jit_module_, _builder, &memory_, this);
+    cranelift::Context funcContext = jit_module_.make_context();
 
-        // if this function is an import call into hle
-        if (importsByAddress_.contains(funcStart)) {
-            const FuncRef target = _builder.declare_func_in_func(jit_module_, functions_.at(funcStart).m_id);
-            emitter.CallGuest(target);
-            continue;
-        }
+    const FuncId funcID = DeclareGuestFunction(funcStart).m_id;
+    funcContext.signature().push_param(types::Pointer(jit_module_));
+    funcContext.signature().push_param(types::Pointer(jit_module_));
+    FunctionBuilderContext _builderContext;
 
-        // keep guest branches out of the native entry block containing abi parameters
-        const Block guestEntry = _builder.create_block();
-        emitter.Jump(guestEntry);
-        emitter.SwitchToBlock(guestEntry);
-        emitter.clBlockMap.emplace(funcStart, guestEntry);
+    FunctionBuilder _builder{funcContext, _builderContext};
 
-        // add all block edges labels
-        for (auto block : bounds.bbs_) {
-            emitter.BlockLookup(block.mStartAddress);
-            continue;
-        }
+    // make entry block
+    Block entry = _builder.create_block();
+    _builder.append_block_params_for_function_params(entry);
+    _builder.switch_to_block(entry);
 
-        GuestAddress address = funcStart;
-        for (; address < funcEnd; address += 4) {
-            const codec::Ins inst(byte_swap(*memory_.GuestToHostVirtual<uint32_t*>(address)));
-            const codec::Opcode op = inst.op;
+    Value state = _builder.block_param(entry, 0);
+    Value base = _builder.block_param(entry, 1);
 
-            InstructionInfo info{.mInst = inst, .mAddress = address};
-#if NOBLE_CRANELIFT_DEBUG
-            auto str = std::format("{:08X} : {}", info.mAddress, info.mInst.simplified().to_string());
-            emitter.comment(str);
-#endif
+    // per function / compilation jit block context
+    EmitterContext emitter(analyzed, state, base, jit_module_, _builder, &memory_, this);
 
-            // if the current address is start of a block, switch to it
-            if (emitter.clBlockMap.contains(address)) {
-                if (address != funcStart)
-                    emitter.SwitchToBlock(emitter.BlockLookup(address));
-            }
+    // keep guest branches out of the native entry block containing abi parameters
+    const Block guestEntry = _builder.create_block();
+    emitter.Jump(guestEntry);
+    emitter.SwitchToBlock(guestEntry);
+    emitter.clBlockMap.emplace(funcStart, guestEntry);
 
-            if (emitter.terminated)
-                continue;
-
-            if (op == PpcOpcode::Illegal) [[unlikely]] {
-                LOG_ERROR("Unknown instruction tried to dispatch. Data: {:08X} Address: {:08X}\n", inst.code,
-                          address);
-                cl_illegal_handler(emitter, info);
-                return;
-            }
-
-            const auto i = static_cast<std::size_t>(op);
-
-            assert(i < emitter_dispatch_table.size());
-
-#if NOBLE_CRANELIFT_DEBUG
-            if (emitter_dispatch_table[i] == &cl_illegal_handler) {
-                emitter_dispatch_table[i](emitter, info);
-                LOG_FATAL("Instruction NYI\n");
-                return;
-            }
-#endif
-
-            emitter_dispatch_table[i](emitter, info);  // dispatch
-
-            // if next address a start of a new block, add a fall through jump to it
-            if (!emitter.terminated && emitter.clBlockMap.contains(address + 4)) {
-                emitter.Jump(emitter.BlockLookup(address + 4));
-            }
-
-#if NOBLE_CRANELIFT_DEBUG
-            LOG_INFO("{}", funcContext.ir());
-#endif
-            continue;
-        }
-        // close the final block if its instruction did not already terminate it
-        if (!emitter.terminated)
-            emitter.Return();
-        _builder.seal_all_blocks();
-        _builder.finish(jit_module_);
-
-#if NOBLE_CRANELIFT_DEBUG
-        LOG_INFO("{}", funcContext.ir());
-#endif
-
-        if (!funcContext.verify(jit_module_))
-            throw std::runtime_error(last_error());
-
-        if (!jit_module_.define_function(funcID, funcContext))
-            throw std::runtime_error(last_error());
-
-        if (!jit_module_.finalize_definitions())
-            throw std::runtime_error(last_error());
-
-        // store the function id, may be needed later
-        // functionIds_.try_emplace(funcStart, funcID);
-
-        // get the function
-        const JITBlock compiled = jit_module_.get_finalized_function_as<JITBlock>(funcID);
-        compiledBlocks_.try_emplace(funcStart, std::make_shared<const JITBlock>(compiled));
-        {
-            std::lock_guard functionLock(funcMutex_);
-            functions_.insert_or_assign(funcStart, JITFunction{.mStartAddress = funcStart,
-                                                               .mEndAddress = funcEnd,
-                                                               .m_id = funcID,
-                                                               .mCallable = true});
-        }
+    // add all block edges labels
+    for (auto block : analyzed.bbs_) {
+        emitter.BlockLookup(block.mStartAddress);
+        continue;
     }
+
+    GuestAddress address = funcStart;
+    for (; address < funcEnd; address += 4) {
+        uint32_t word;
+        std::memcpy(&word, bytes.data() + (address - funcStart), sizeof(word));
+        const codec::Ins inst(byte_swap(word));
+        const codec::Opcode op = inst.op;
+
+        InstructionInfo info{.mInst = inst, .mAddress = address};
+#if NOBLE_CRANELIFT_DEBUG
+        auto str = std::format("{:08X} : {}", info.mAddress, info.mInst.simplified().to_string());
+        emitter.comment(str);
+#endif
+
+        // if the current address is start of a block, switch to it
+        if (emitter.clBlockMap.contains(address)) {
+            if (address != funcStart)
+                emitter.SwitchToBlock(emitter.BlockLookup(address));
+        }
+
+        if (emitter.terminated)
+            continue;
+
+        if (op == PpcOpcode::Illegal) [[unlikely]] {
+            LOG_ERROR("Unknown instruction tried to dispatch. Data: {:08X} Address: {:08X}\n", inst.code,
+                      address);
+            cl_illegal_handler(emitter, info);
+            return false;
+        }
+
+        const auto i = static_cast<std::size_t>(op);
+
+        assert(i < emitter_dispatch_table.size());
+
+        if (i >= emitter_dispatch_table.size() || emitter_dispatch_table[i] == &cl_illegal_handler) {
+            cl_illegal_handler(emitter, info);
+            LOG_FATAL("Instruction NYI at {:08X}: {:08X} {} (entry {:08X})\n", address, inst.code,
+                      inst.basic().to_string(), funcStart);
+            return false;
+        }
+
+        emitter_dispatch_table[i](emitter, info);  // dispatch
+
+        // if next address a start of a new block, add a fall through jump to it
+        if (!emitter.terminated && emitter.clBlockMap.contains(address + 4)) {
+            emitter.Jump(emitter.BlockLookup(address + 4));
+        }
+
+        continue;
+    }
+    // close the final block if its instruction did not already terminate it
+    if (!emitter.terminated) {
+        emitter.ins().store(_builder.memflags_new(), emitter.i32(funcEnd), state, offsetof(PPCContext, NIA));
+        emitter.Return();
+    }
+    _builder.seal_all_blocks();
+    _builder.finish(jit_module_);
+
+#if NOBLE_CRANELIFT_DEBUG
+    LOG_INFO("{}", funcContext.ir());
+#endif
+
+    PublishFunction(funcID, funcContext, funcStart, funcEnd);
+    return true;
 }
 
 void CraneliftJIT::SetHLERegistry(hle::Registry* registry) {
@@ -220,16 +234,9 @@ void CraneliftJIT::CompileImport(const XLoader::Import& import) {
     const auto hostEntry = imports_->Resolve(import.library, static_cast<uint16_t>(import.ordinal));
 
     Context context = jit_module_.make_context();
-    Signature signature = context.signature();
-    signature.push_param(types::Pointer(jit_module_));
-    signature.push_param(types::Pointer(jit_module_));
-
-    const std::string name = std::format("{:08X}", import.funcImportAddr);
-
-    const FuncId id = jit_module_.declare_function(name.c_str(), CL_LINKAGE_EXPORT, signature);
-
-    if (id == INVALID_ID)
-        throw std::runtime_error(last_error());
+    context.signature().push_param(types::Pointer(jit_module_));
+    context.signature().push_param(types::Pointer(jit_module_));
+    const FuncId id = DeclareGuestFunction(import.funcImportAddr).m_id;
 
     // host sig
     Signature hostSignature = jit_module_.make_signature();
@@ -265,32 +272,52 @@ void CraneliftJIT::CompileImport(const XLoader::Import& import) {
     };
 
     emitter.CallIndirect(hostSignatureRef, target, args);
+    const Value returnAddress
+        = builder.ins().band(builder.ins().ireduce(types::I32(), emitter.load_spr(eSPR::LR)),
+                             builder.ins().iconst(types::I32(), -4));
+    builder.ins().store(builder.memflags_new(), returnAddress, state, offsetof(PPCContext, NIA));
     emitter.Return();
 
     builder.seal_all_blocks();
     builder.finish(jit_module_);
 
-    if (!context.verify(jit_module_) || !jit_module_.define_function(id, context)
-        || !jit_module_.finalize_definitions())
-        throw std::runtime_error(last_error());
-
-    {
-        std::lock_guard functionLock(funcMutex_);
-        functions_.insert_or_assign(
-            import.funcImportAddr,
-            JITFunction{.mStartAddress = import.funcImportAddr, .m_id = id, .mCallable = true});
-    }
-    const auto function = jit_module_.get_finalized_function_as<JITBlock>(id);
-
-    compiledBlocks_.emplace(import.funcImportAddr, std::make_shared<const JITBlock>(function));
+    PublishFunction(id, context, import.funcImportAddr, import.funcImportAddr + 16);
 }
 
 void CraneliftJIT::CompileJITBlock(GuestAddress address) {
     std::lock_guard lock(mutex_);
+    if (address & 3)
+        throw std::invalid_argument("unaligned entry address");
 
-    const auto it = importsByAddress_.find(address);
-    if (it != importsByAddress_.end())
+    if (compiledBlocks_.contains(address))
+        return;
+
+    if (const auto it = importsByAddress_.find(address); it != importsByAddress_.end()) {
         CompileImport(it->second);
+        return;
+    }
+
+    // an entry inside a known function receives its own native entry at that exact address
+    for (auto it = functionBounds_.upper_bound(address); it != functionBounds_.begin();) {
+        --it;
+
+        if (address < it->second.mEnd) {
+            auto bounds = it->second;
+            bounds.mStart = address;
+            CompileFunction(bounds);
+            return;
+        }
+    }
+
+    uint64_t limit = uint64_t(UINT32_MAX & ~3u);
+    for (const auto& region : codeRegions_)
+        if (address >= region.start && address < region.end)
+            limit = (std::min)(limit, region.end);
+
+    if (const auto next = functionBounds_.upper_bound(address); next != functionBounds_.end())
+        limit = (std::min)(limit, uint64_t(next->first));
+
+    CompileFunction(PPCModule::AnalyseJITBlock(memory_, address, limit));
 }
 
 void CraneliftJIT::InvalidateBlock(GuestAddress address) {}
@@ -304,31 +331,52 @@ JITBlock CraneliftJIT::FindBlock(GuestAddress address) const {
     return it != compiledBlocks_.end() ? *it->second : nullptr;
 }
 
+cranelift::Signature CraneliftJIT::GuestSignature() {
+    auto signature = jit_module_.make_signature();
+    signature.push_param(cranelift::types::Pointer(jit_module_));
+    signature.push_param(cranelift::types::Pointer(jit_module_));
+
+    return signature;
+}
+
 JITFunction CraneliftJIT::LookupFunction(GuestAddress address) {
+    std::lock_guard lock(mutex_);
+    return DeclareGuestFunction(address);
+}
+
+JITFunction CraneliftJIT::DeclareGuestFunction(GuestAddress address) {
     std::lock_guard lock(funcMutex_);
+    if (const auto it = functions_.find(address); it != functions_.end())
+        return it->second;
 
-    if (functions_.contains(address))
-        return functions_.at(address);
+    const auto signature = GuestSignature();
+    const std::string name = std::format("{:08X}", address);
+    const auto id = jit_module_.declare_function(name.c_str(), CL_LINKAGE_EXPORT, signature);
 
-    // create function id for address
-
-    /* jitted guest entry prototpype is void <>(PPCContext* state, void* mem_base) */
-    // Own the signature: a signature borrowed from a temporary Context dangles
-    // as soon as that Context is destroyed at the end of the statement.
-    cranelift::Signature funcSig = jit_module_.make_signature();
-    funcSig.push_param(cranelift::types::Pointer(jit_module_));
-    funcSig.push_param(cranelift::types::Pointer(jit_module_));
-
-    std::string name = std::format("{:08X}", address);
-    cranelift::FuncId funcID = jit_module_.declare_function(name.c_str(), CL_LINKAGE_EXPORT, funcSig);
-
-    if (funcID == cranelift::INVALID_ID)
+    if (id == cranelift::INVALID_ID)
         throw std::runtime_error(cranelift::last_error());
 
-    JITFunction jf = {.mStartAddress = address, .mEndAddress = 0, .m_id = funcID};
-    functions_.try_emplace(address, jf);
+    const JITFunction function{.mStartAddress = address, .mEndAddress = 0, .m_id = id};
+    functions_.emplace(address, function);
 
-    return jf;
+    return function;
+}
+
+void CraneliftJIT::PublishFunction(cranelift::FuncId id, cranelift::Context& context, GuestAddress start,
+                                   GuestAddress end) {
+    if (!context.verify(jit_module_) || !jit_module_.define_function(id, context)
+        || !jit_module_.finalize_definitions())
+        throw std::runtime_error(cranelift::last_error());
+
+    const JITBlock compiled = jit_module_.get_finalized_function_as<JITBlock>(id);
+    if (!compiled)
+        throw std::runtime_error("compiled function has no native entry");
+
+    compiledBlocks_.emplace(start, std::make_shared<const JITBlock>(compiled));
+    std::lock_guard lock(funcMutex_);
+
+    functions_.insert_or_assign(
+        start, JITFunction{.mStartAddress = start, .mEndAddress = end, .m_id = id, .mCallable = true});
 }
 
 std::optional<JITFunction> CraneliftJIT::FindFunction(GuestAddress address) const {

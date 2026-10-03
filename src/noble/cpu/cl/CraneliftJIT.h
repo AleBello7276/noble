@@ -31,6 +31,8 @@ class CraneliftJIT final : public JITBackend {
 public:
     explicit CraneliftJIT(Memory& memory);
 
+    // copy analysis metadata and import bindings for later compilation
+    void RegisterPPCModule(const PPCModule& module) override;
     void CompilePPCModule(PPCModule& module) override;
 
     void CompileJITBlock(GuestAddress address) override;
@@ -55,7 +57,20 @@ private:
     hle::Registry* imports_ = nullptr;
     std::unordered_map<GuestAddress, XLoader::Import> importsByAddress_;
 
+    void RegisterModule(const PPCModule& module);
     void CompileImport(const XLoader::Import& import);
+    bool CompileFunction(const PPCFuncMap& bounds);
+    void PublishFunction(cranelift::FuncId id, cranelift::Context& context, GuestAddress start,
+                         GuestAddress end);
+    cranelift::Signature GuestSignature();
+    JITFunction DeclareGuestFunction(GuestAddress address);
+
+    struct CodeRegion {
+        GuestAddress start;
+        uint64_t end;
+    };
+    std::vector<CodeRegion> codeRegions_;
+    std::map<GuestAddress, PPCFuncMap> functionBounds_;
 
     mutable std::mutex mutex_;
     mutable std::mutex funcMutex_;

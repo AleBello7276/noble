@@ -1,9 +1,12 @@
 #include "PPCModule.h"
 
 #include "Logger.h"
+#include "Memory.h"
 #include <algorithm>
 #include <assert.h>
 #include <cstring>
+#include <limits>
+#include <stdexcept>
 #include <unordered_set>
 
 PPCModule::PPCModule() : m_type(BinaryType::BIN_UNKNOWN), mID(UINT32_MAX) {}
@@ -71,71 +74,99 @@ void PPCModule::AnalyseFunctions() {
 }
 
 void PPCModule::BuildFunctionCFG(XLoader::Section* text) {
-    const GuestAddress virtualAddr = text->getVirtualAddress();
-    const GuestAddress virtualSize = text->getVirtualSize();
+    if (!text)
+        return;
 
-    const GuestAddress base = mImage->getBaseAddress();
-    const GuestAddress textStart = base + virtualAddr;
-    const GuestAddress textEnd = textStart + virtualSize;
+    const uint64_t offset = text->getVirtualAddress();
+    const uint64_t size = text->getVirtualSize();
+    const uint64_t textStart = uint64_t(mImage->getBaseAddress()) + offset;
+    const uint64_t textEnd = textStart + size;
 
-    const auto* secData = static_cast<const uint8_t*>(mImage->getMemoryData()) + virtualAddr;
+    if (offset + size > mImage->getMemorySize())
+        throw std::runtime_error("executable section exceeds image data");
 
-    for (auto& [key, func] : funcs_) {
-        func.bbs_.clear();
+    const std::span<const uint8_t> bytes(mImage->getMemoryData() + offset, size);
+    for (auto& [key, function] : funcs_) {
+        if (function.mStart < textStart || function.mEnd > textEnd)
+            throw std::runtime_error("function bounds exceed executable section");
 
-        // check if out if ranges are out of bounds, and if aligned
-        if (func.mStart < textStart || func.mEnd > textEnd || func.mStart >= func.mEnd
-            || ((func.mStart | func.mEnd) & 3)) {
-            assert(false);
+        BuildFunctionCFG(function,
+                         bytes.subspan(function.mStart - textStart, function.mEnd - function.mStart));
+    }
+}
+
+void PPCModule::BuildFunctionCFG(PPCFuncMap& function, std::span<const uint8_t> code) {
+    if (function.mStart >= function.mEnd || ((function.mStart | function.mEnd) & 3)
+        || code.size() != uint64_t(function.mEnd) - function.mStart)
+        throw std::invalid_argument("invalid function");
+
+    std::vector<GuestAddress> boundaries{function.mStart, function.mEnd};
+    for (GuestAddress pc = function.mStart; pc < function.mEnd; pc += 4) {
+        uint32_t word;
+        std::memcpy(&word, code.data() + (pc - function.mStart), sizeof(word));
+
+        const codec::Ins inst(byte_swap(word));
+
+        if (!inst.is_branch())
             continue;
-        }
 
-        std::vector<GuestAddress> boundaries;
-        boundaries.push_back(func.mStart);
-        boundaries.push_back(func.mEnd);
+        // every branch has a separate continuation even if its target is resolved at runtime
+        if (pc + 4 < function.mEnd)
+            boundaries.push_back(pc + 4);
 
-        for (GuestAddress pc = func.mStart; pc < func.mEnd; pc += 4) {
-            const auto offset = pc - textStart;
-
-            uint32_t raw;
-            std::memcpy(&raw, secData + offset, sizeof(raw));
-
-            codec::Ins inst{byte_swap(raw)};
-
-            const bool directBranch
-                = (inst.is_unconditional_branch() || inst.is_conditional_branch()) && !inst.field_lk();
-
-            const bool indirectTerminator
-                = inst.is_blr() || (inst.op == PpcOpcode::Bcctr && !inst.field_lk());
-
-            if (directBranch) {
-                if (auto dest = inst.branch_dest(pc)) {
-                    if (*dest >= func.mStart && *dest < func.mEnd)
-                        boundaries.push_back(*dest);
-                }
-
-                // Branch ends the current BB.
-                if (pc + 4 < func.mEnd)
-                    boundaries.push_back(pc + 4);
-            } else if (indirectTerminator) {
-                if (pc + 4 < func.mEnd)
-                    boundaries.push_back(pc + 4);
-            }
-        }
-
-        std::sort(boundaries.begin(), boundaries.end());
-        boundaries.erase(std::unique(boundaries.begin(), boundaries.end()), boundaries.end());
-
-        for (size_t i = 0; i + 1 < boundaries.size(); ++i) {
-            if (boundaries[i] == boundaries[i + 1])
-                continue;
-
-            func.bbs_.push_back({
-                .mStartAddress = boundaries[i],
-                .mEndAddress = boundaries[i + 1],
-            });
+        if (!inst.field_lk()) {
+            if (const auto target = inst.branch_dest(pc);
+                target && *target >= function.mStart && *target < function.mEnd)
+                boundaries.push_back(*target);
         }
     }
+    std::sort(boundaries.begin(), boundaries.end());
+    boundaries.erase(std::unique(boundaries.begin(), boundaries.end()), boundaries.end());
+    function.bbs_.clear();
+
+    for (size_t i = 0; i + 1 < boundaries.size(); ++i)
+        function.bbs_.push_back({boundaries[i], boundaries[i + 1]});
+}
+
+PPCFuncMap PPCModule::AnalyseJITBlock(Memory& memory, GuestAddress address, uint64_t limit) {
+    constexpr size_t maxInstructions = 256;
+
+    if (address & 3)
+        throw std::invalid_argument("unaligned jit entry address");
+
+    limit = (std::min)(limit, uint64_t(UINT32_MAX & ~3u));
+    std::vector<uint8_t> code;
+
+    code.reserve(maxInstructions * 4);
+    bool tailCall = false;
+
+    for (uint64_t pc = address; code.size() < maxInstructions * 4 && pc + 4 <= limit; pc += 4) {
+        const auto* pointer = static_cast<const uint8_t*>(memory.Translate(static_cast<GuestAddress>(pc), 4));
+        if (!pointer)
+            break;
+
+        uint32_t word;
+        std::memcpy(&word, pointer, sizeof(word));
+        code.insert(code.end(), pointer, pointer + 4);
+
+        const codec::Ins inst(byte_swap(word));
+
+        if (inst.is_branch() || inst.op == PpcOpcode::Illegal) {
+            tailCall = inst.is_unconditional_branch() && !inst.field_lk();
+            break;
+        }
+    }
+
+    if (code.empty())
+        throw std::invalid_argument("jit entry has no mapped executable instructions");
+
+    PPCFuncMap function{.mStart = address,
+                        .mEnd = static_cast<GuestAddress>(address + code.size()),
+                        .mTailCallProlog = tailCall,
+                        .mInPdata = false};
+
+    BuildFunctionCFG(function, code);
+    return function;
 }
 
 void PPCModule::AnalysePDATAFuncs(XLoader::Section* pdata) {
