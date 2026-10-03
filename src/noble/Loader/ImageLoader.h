@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -66,6 +67,8 @@ public:
     virtual uint32_t getEntryPoint() const = 0;
     virtual const uint8_t* getMemoryData() const = 0;
     virtual size_t getMemorySize() const = 0;
+    // retain the original container header bytes for guest loader metadata
+    virtual std::span<const uint8_t> getHeaderData() const { return {}; }
     virtual const std::vector<std::unique_ptr<Section>>& getSections() const = 0;
     virtual const std::vector<std::unique_ptr<Import>>& getImports() const = 0;
 };

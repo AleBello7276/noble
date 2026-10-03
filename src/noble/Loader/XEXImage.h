@@ -131,6 +131,7 @@ public:
     uint32_t getEntryPoint() const override { return m_entryPoint; }
     const uint8_t* getMemoryData() const override { return m_memoryData; }
     size_t getMemorySize() const override { return m_memorySize; }
+    std::span<const uint8_t> getHeaderData() const override { return m_headerData; }
     const std::vector<std::unique_ptr<Section>>& getSections() const override { return m_sections; }
     const std::vector<std::unique_ptr<Import>>& getImports() const override { return m_imports; }
 
@@ -159,6 +160,7 @@ private:
     size_t m_memorySize;
 
     XEXHeader m_header;
+    std::vector<uint8_t> m_headerData;
     XEXLoaderInfo m_loaderInfo;
     XEXExecutionInfo m_executionInfo;
 

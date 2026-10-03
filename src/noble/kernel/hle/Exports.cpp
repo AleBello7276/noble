@@ -1,6 +1,7 @@
 #include "Exports.h"
 
 #include "krnl/Threading.h"
+#include "krnl/Variables.h"
 #include <array>
 #include <unordered_set>
 
@@ -15,7 +16,7 @@ void RegisterExports(Registry& registry) {
     for (const auto group : groups) {
         for (const auto& entry : group) {
             const uint64_t key = (uint64_t(entry.library) << 32) | entry.ordinal;
-            
+
             if (!registered.insert(key).second)
                 throw std::logic_error("duplicate hle export binding");
         }
@@ -24,6 +25,8 @@ void RegisterExports(Registry& registry) {
     for (const auto group : groups)
         for (const auto& entry : group)
             entry.install(registry, entry.library, entry.ordinal);
+
+    krnl::RegisterVariables(registry);
 }
 
 }  // namespace hle

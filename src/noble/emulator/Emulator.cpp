@@ -1,4 +1,5 @@
 #include "Emulator.h"
+#include "Logger.h"
 #include <cstring>
 
 Emulator::Emulator() : mMemory_(), cpu_(mMemory_), mScheduler_(cpu_), mKernel_(mMemory_, mScheduler_) {
@@ -53,6 +54,14 @@ bool Emulator::LoadTitle(std::string path) {
         return false;
     }
 
+    if (!mKernel_.SetExecutableModule(image)) {
+        mKernel_.Shutdown();
+        mTitleProcess_ = nullptr;
+        mMemory_.FreeVirtual(mImageAddress_);
+        mImageAddress_ = 0;
+        return false;
+    }
+
     // make process main thread
     KThread* initial = mKernel_.CreateInitialThread(mTitleProcess_);
     if (!initial) {
@@ -74,7 +83,12 @@ bool Emulator::Run() {
         return false;
 
     // register boot metadata and compile only the guest entry point
-    cpu_.jit()->RegisterPPCModule(mStartModule);
+    try {
+        cpu_.jit()->RegisterPPCModule(mStartModule);
+    } catch (const std::exception& error) {
+        LOG_ERROR("Unable to bind title imports: {}", error.what());
+        return false;
+    }
 
     const GuestAddress entry = mStartModule.mImage->getEntryPoint();
     cpu_.jit()->CompileJITBlock(entry);

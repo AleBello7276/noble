@@ -8,6 +8,90 @@
 
 namespace hle {
 
+namespace {
+
+// resolve a variable name against the export catalogue before allocating its guest storage
+const XLoader::ImportDefinition& VariableDefinition(XboxLibrary library, std::string_view name) {
+    for (const auto& definition : XLoader::importTable)
+        if (definition.library == library && definition.name == name
+            && definition.type == ImportType::Variable)
+            return definition;
+
+    throw std::invalid_argument("unknown hle variable export name");
+}
+
+}  // namespace
+
+Registry::~Registry() {
+    ClearVariables();
+}
+
+GuestAddress Registry::DefineVariableBytes(XboxLibrary library, std::string_view name,
+                                           std::span<const std::byte> bytes) {
+    const auto& definition = VariableDefinition(library, name);
+    if (bytes.empty())
+        throw std::invalid_argument("empty hle variable export");
+
+    std::unique_lock lock(mutex_);
+    const auto key = Key(library, definition.ordinal);
+    if (variables_.contains(key))
+        throw std::logic_error("duplicate hle variable export");
+
+    const GuestAddress address = memory_.AllocateVirtual(bytes.size());
+    if (!address)
+        throw std::runtime_error("unable to allocate hle variable export");
+
+    try {
+        std::memcpy(memory_.Translate(address, bytes.size()), bytes.data(), bytes.size());
+        variables_.emplace(key, Variable{address, bytes.size()});
+    } catch (...) {
+        memory_.FreeVirtual(address);
+        throw;
+    }
+
+    return address;
+}
+
+void Registry::UpdateVariableBytes(XboxLibrary library, std::string_view name,
+                                   std::span<const std::byte> bytes) {
+    const auto& definition = VariableDefinition(library, name);
+    std::unique_lock lock(mutex_);
+
+    const auto it = variables_.find(Key(library, definition.ordinal));
+    if (it == variables_.end() || it->second.size != bytes.size())
+        throw std::invalid_argument("missing hle variable export or mismatched value size");
+
+    std::memcpy(memory_.Translate(it->second.address, bytes.size()), bytes.data(), bytes.size());
+}
+
+void Registry::BindVariableImport(const XLoader::Import& import) const {
+    if (import.type != ImportType::Variable || import.ordinal > UINT16_MAX || !import.tableAddr)
+        throw std::invalid_argument("invalid variable import");
+
+    std::shared_lock lock(mutex_);
+
+    const auto it = variables_.find(Key(import.library, static_cast<uint16_t>(import.ordinal)));
+    if (it == variables_.end()) {
+        LOG_ERROR("Unimplemented HLE variable import {}!{} ordinal 0x{:04X} at guest slot 0x{:08X}",
+                  import.libraryName, import.name, import.ordinal, import.tableAddr);
+        throw std::runtime_error("unimplemented hle variable import: " + import.name);
+    }
+
+    auto* slot = memory_.Translate(import.tableAddr, sizeof(uint32_t));
+    if (!slot)
+        throw std::runtime_error("unmapped variable import slot");
+
+    const uint32_t encoded = byte_swap(it->second.address);
+    std::memcpy(slot, &encoded, sizeof(encoded));
+}
+
+void Registry::ClearVariables() {
+    std::unique_lock lock(mutex_);
+    for (const auto& [key, variable] : variables_)
+        memory_.FreeVirtual(variable.address);
+    variables_.clear();
+}
+
 void* Context::Translate(GuestAddress address, size_t size) const {
     if (!address || !size || size > 0x100000000ull - address)
         throw std::out_of_range("invalid hle guest memory range");

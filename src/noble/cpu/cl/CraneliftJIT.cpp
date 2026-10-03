@@ -64,6 +64,13 @@ void CraneliftJIT::RegisterModule(const PPCModule& module) {
         functionBounds_.insert_or_assign(address, bounds);
     }
     for (const auto& import : module.mImage->getImports()) {
+        if (import->type == ImportType::Variable) {
+            if (!imports_)
+                throw std::logic_error("attach an hle registry before binding variable imports");
+            imports_->BindVariableImport(*import);
+            continue;
+        }
+
         if (import->type != ImportType::Function || !import->funcImportAddr)
             continue;
 

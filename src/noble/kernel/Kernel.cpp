@@ -1,10 +1,13 @@
 #include "Kernel.h"
 
+#include "GuestModule.h"
 #include "Logger.h"
+#include "core/byte_swap.h"
 #include "cpu/Scheduler.h"
 #include "emulator/Memory.h"
 #include "hle/Exports.h"
 #include <algorithm>
+#include <cstring>
 
 Kernel::Kernel(Memory& memory, Scheduler& scheduler)
     : memory_(memory), scheduler_(scheduler), imports_(*this, memory) {}
@@ -25,6 +28,60 @@ void Kernel::Shutdown() {
                 memory_.FreeVirtual(thread->mStackLimit);
 
     processes_.clear();
+    imports_.ClearVariables();
+
+    if (executableModule_)
+        memory_.FreeVirtual(executableModule_);
+
+    if (executableHeader_)
+        memory_.FreeVirtual(executableHeader_);
+
+    executableModule_ = 0;
+    executableHeader_ = 0;
+}
+
+bool Kernel::SetExecutableModule(const XLoader::IImage& image) {
+    if (executableModule_ || !image.getMemorySize() || image.getMemorySize() > UINT32_MAX)
+        return false;
+
+    const auto header = image.getHeaderData();
+    const GuestAddress recordAddress = memory_.AllocateVirtual(sizeof(GuestModule));
+    if (!recordAddress)
+        return false;
+
+    const GuestAddress headerAddress = header.empty() ? 0 : memory_.AllocateVirtual(header.size());
+    if (!header.empty() && !headerAddress) {
+        memory_.FreeVirtual(recordAddress);
+        return false;
+    }
+
+    try {
+        if (headerAddress)
+            std::memcpy(memory_.Translate(headerAddress, header.size()), header.data(), header.size());
+
+        GuestModule record{};
+        record.imageBase = byte_swap(image.getBaseAddress());
+        record.imageSize = byte_swap(static_cast<uint32_t>(image.getMemorySize()));
+        record.fullImageSize = record.imageSize;
+        record.entryPoint = byte_swap(image.getEntryPoint());
+        record.loadCount = byte_swap(uint16_t(1));
+        record.xexHeaderBase = byte_swap(headerAddress);
+        std::memcpy(memory_.Translate(recordAddress, sizeof(record)), &record, sizeof(record));
+
+        imports_.UpdateVariable<uint32_t>(XboxLibrary::XboxKrnl, "XexExecutableModuleHandle", recordAddress);
+    } catch (const std::exception& error) {
+        LOG_ERROR("Unable to publish executable module: {}", error.what());
+        memory_.FreeVirtual(recordAddress);
+
+        if (headerAddress)
+            memory_.FreeVirtual(headerAddress);
+
+        return false;
+    }
+
+    executableModule_ = recordAddress;
+    executableHeader_ = headerAddress;
+    return true;
 }
 
 KProcess* Kernel::CreateGuestProcess(const ProcessCreateInfo& info) {

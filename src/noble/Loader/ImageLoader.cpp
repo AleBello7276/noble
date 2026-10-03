@@ -292,6 +292,10 @@ bool XEXImage::load(const uint8_t* data, size_t size) {
         return false;
     }
 
+    if (m_header.exeOffset < sizeof(XEXHeader) || m_header.exeOffset > size)
+        return false;
+    m_headerData.assign(data, data + m_header.exeOffset);
+
     if (!decompressImage(data, size)) {
         printf("Failed to decompress XEX image\n");
         return false;

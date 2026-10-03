@@ -5,7 +5,9 @@
 #include "emulator/Memory.h"
 #include <bit>
 #include <shared_mutex>
+#include <span>
 #include <stdexcept>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <unordered_map>
@@ -154,6 +156,40 @@ public:
     using EntryPoint = void (*)(Registry*, PPCContext*, uint32_t, uint32_t, uint32_t) noexcept;
 
     Registry(Kernel& kernel, Memory& memory) : kernel_(kernel), memory_(memory) {}
+    // release owned variable storage when the registry is destroyed
+    ~Registry();
+
+    // allocate an exported scalar in guest memory and initialize its big endian value
+    template <typename T>
+    GuestAddress DefineVariable(XboxLibrary library, std::string_view name, T value) {
+        static_assert(std::is_integral_v<T> && !std::is_same_v<T, bool>);
+        auto encoded = static_cast<std::make_unsigned_t<T>>(value);
+        if constexpr (std::endian::native == std::endian::little)
+            encoded = std::byteswap(encoded);
+        return DefineVariableBytes(library, name, std::as_bytes(std::span{&encoded, 1}));
+    }
+
+    // update an exported scalar without changing the address held by guest import slots
+    template <typename T>
+    void UpdateVariable(XboxLibrary library, std::string_view name, T value) {
+        static_assert(std::is_integral_v<T> && !std::is_same_v<T, bool>);
+        auto encoded = static_cast<std::make_unsigned_t<T>>(value);
+        if constexpr (std::endian::native == std::endian::little)
+            encoded = std::byteswap(encoded);
+        UpdateVariableBytes(library, name, std::as_bytes(std::span{&encoded, 1}));
+    }
+
+    // patch a variable import slot with its exported guest address or report a missing binding
+    void BindVariableImport(const XLoader::Import& import) const;
+
+    // release exported storage after guest execution has stopped
+    void ClearVariables();
+
+    // allocate an exported array or structure from bytes already encoded for the guest
+    GuestAddress DefineVariableBytes(XboxLibrary library, std::string_view name,
+                                     std::span<const std::byte> bytes);
+    // replace exported bytes while preserving the storage address and size
+    void UpdateVariableBytes(XboxLibrary library, std::string_view name, std::span<const std::byte> bytes);
 
     // bind an ordinary function with scalar guest arguments and optional host service references
     template <auto Function>
@@ -172,6 +208,11 @@ public:
     EntryPoint Resolve(XboxLibrary library, uint16_t ordinal) const;
 
 private:
+    struct Variable {
+        GuestAddress address;
+        size_t size;
+    };
+
     // call the selected shim directly and contain exceptions before returning to jit code
     template <Handler Function>
     static void Invoke(Registry* registry, PPCContext* cpu, uint32_t library, uint32_t ordinal,
@@ -212,6 +253,7 @@ private:
     Memory& memory_;
     mutable std::shared_mutex mutex_;
     std::unordered_map<uint64_t, EntryPoint> entries_;
+    std::unordered_map<uint64_t, Variable> variables_;
 };
 
 }  // namespace hle

@@ -38,6 +38,9 @@ public:
 
     KProcess* CreateGuestProcess(const ProcessCreateInfo& info);
 
+    // publish the executable guest loader record and retain its original xex header
+    bool SetExecutableModule(const XLoader::IImage& image);
+
     KThread* CreateThread(KProcess* process, const ThreadCreateInfo& info);
     void StartThread(KThread* thread);
 
@@ -71,6 +74,8 @@ private:
     Memory& memory_;
     Scheduler& scheduler_;
     hle::Registry imports_;
+    GuestAddress executableModule_ = 0;
+    GuestAddress executableHeader_ = 0;
     std::mutex tlsMutex_;
 
     uint32_t next_process_id_ = 1;
