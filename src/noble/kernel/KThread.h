@@ -1,5 +1,4 @@
 #pragma once
-#include <array>
 #include <atomic>
 #include <stdint.h>
 
@@ -37,12 +36,20 @@ public:
 
     KProcess* process() const { return process_; }
 
+    // get the guest kthread pointer used by kernel objects and critical section owners
+    GuestAddress guest_address() const { return guestAddress_; }
+
+    // get the per thread kpcr address held in guest r13
+    GuestAddress pcr_address() const { return pcrAddress_; }
+
+    // publish scheduler state while holding the scheduler mutex
+    void SyncGuestState();
+
 public:
     PPCContext mContext{};
     GuestAddress mStackBase = 0;
     GuestAddress mStackLimit = 0;
     GuestAddress tls_address = 0;
-    std::array<uint32_t, KProcess::TLS_SLOT_COUNT> mTlsValues{};
 
 public:
     ThreadState mState = ThreadState::Created;
@@ -61,6 +68,14 @@ public:
     bool mWaitPending = false;
 
 private:
+    friend class Kernel;
+    friend class KProcess;
     ThreadID id_;
     KProcess* process_;
+    GuestAddress guestAddress_ = 0;
+    GuestAddress pcrAddress_ = 0;
+    GuestAddress tlsAllocation_ = 0;
+    GuestKernelThread* guestThread_ = nullptr;
+    GuestProcessorRegion* guestPCR_ = nullptr;
+    bool guestProcessEntryLinked_ = false;
 };

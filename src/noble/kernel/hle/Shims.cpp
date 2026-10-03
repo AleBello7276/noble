@@ -2,7 +2,6 @@
 
 #include "Loader/table/ImportTable.h"
 #include "Logger.h"
-#include "core/byte_swap.h"
 #include <cstring>
 #include <mutex>
 
@@ -81,7 +80,7 @@ void Registry::BindVariableImport(const XLoader::Import& import) const {
     if (!slot)
         throw std::runtime_error("unmapped variable import slot");
 
-    const uint32_t encoded = byte_swap(it->second.address);
+    const be<uint32_t> encoded(it->second.address);
     std::memcpy(slot, &encoded, sizeof(encoded));
 }
 
@@ -131,33 +130,31 @@ void* Context::Translate(GuestAddress address, size_t size) const {
 }
 
 uint32_t Context::ReadU32(GuestAddress address) const {
-    uint32_t value;
+    be<uint32_t> value;
 
     std::memcpy(&value, Translate(address, sizeof(value)), sizeof(value));
-    return byte_swap(value);
+    return value;
 }
 
 uint64_t Context::ReadU64(GuestAddress address) const {
-    uint64_t value;
+    be<uint64_t> value;
 
     std::memcpy(&value, Translate(address, sizeof(value)), sizeof(value));
-    return byte_swap(value);
+    return value;
 }
 
 void Context::WriteU32(GuestAddress address, uint32_t value) const {
     if (!memory.IsAccessible(address, sizeof(value), true))
         throw std::out_of_range("hle write to inaccessible guest memory");
-    value = byte_swap(value);
-
-    std::memcpy(Translate(address, sizeof(value)), &value, sizeof(value));
+    const be<uint32_t> encoded(value);
+    std::memcpy(Translate(address, sizeof(encoded)), &encoded, sizeof(encoded));
 }
 
 void Context::WriteU64(GuestAddress address, uint64_t value) const {
     if (!memory.IsAccessible(address, sizeof(value), true))
         throw std::out_of_range("hle write to inaccessible guest memory");
-    value = byte_swap(value);
-
-    std::memcpy(Translate(address, sizeof(value)), &value, sizeof(value));
+    const be<uint64_t> encoded(value);
+    std::memcpy(Translate(address, sizeof(encoded)), &encoded, sizeof(encoded));
 }
 
 void Registry::RegisterEntry(XboxLibrary library, uint16_t ordinal, EntryPoint entry) {

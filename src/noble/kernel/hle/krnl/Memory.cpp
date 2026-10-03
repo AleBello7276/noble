@@ -24,24 +24,23 @@ constexpr uint32_t memHeap = 0x40000000;
 constexpr uint32_t mem16MBPages = 0x80000000;
 
 // allocate guest virtual pages and update the caller's big endian base and size on success
-uint32_t NtAllocateVirtualMemory(Context& context, GuestAddress baseAddressPointer,
-                                 GuestAddress regionSizePointer, uint32_t allocationType, uint32_t protect,
-                                 uint32_t debugMemory) {
-    if (!baseAddressPointer || !regionSizePointer)
+uint32_t NtAllocateVirtualMemory(Memory& memory, Pointer<be<uint32_t>, PointerValidation::Report> baseAddress,
+                                 Pointer<be<uint32_t>, PointerValidation::Report> regionSize,
+                                 uint32_t allocationType, uint32_t protect, uint32_t debugMemory) {
+    if (!baseAddress.guest_address() || !regionSize.guest_address())
         return statusInvalidParameter;
 
-    if (!context.memory.IsAccessible(baseAddressPointer, 4, true)
-        || !context.memory.IsAccessible(regionSizePointer, 4, true))
+    if (!baseAddress || !regionSize)
         return statusAccessViolation;
 
-    const uint64_t basePointer = baseAddressPointer;
-    const uint64_t sizePointer = regionSizePointer;
+    const uint64_t basePointer = baseAddress.guest_address();
+    const uint64_t sizePointer = regionSize.guest_address();
 
     if (basePointer < sizePointer + 4 && sizePointer < basePointer + 4)
         return statusInvalidParameter;
 
-    const GuestAddress base = context.ReadU32(baseAddressPointer);
-    const uint32_t requestedSize = context.ReadU32(regionSizePointer);
+    const GuestAddress base = *baseAddress;
+    const uint32_t requestedSize = *regionSize;
 
     constexpr uint32_t supportedFlags
         = memCommit | memReserve | memReset | memTopDown | memNoZero | memLargePages | memHeap | mem16MBPages;
@@ -98,9 +97,9 @@ uint32_t NtAllocateVirtualMemory(Context& context, GuestAddress baseAddressPoint
     VirtualAllocationResult result;
 
     try {
-        result = context.memory.AllocateVirtualRegion(adjustedBase, static_cast<size_t>(size), kind,
-                                                      allocationType & memReserve, allocationType & memCommit,
-                                                      allocationType & memTopDown, protection, address);
+        result = memory.AllocateVirtualRegion(adjustedBase, static_cast<size_t>(size), kind,
+                                              allocationType & memReserve, allocationType & memCommit,
+                                              allocationType & memTopDown, protection, address);
 
     } catch (const std::bad_alloc&) {
         return statusNoMemory;
@@ -117,8 +116,8 @@ uint32_t NtAllocateVirtualMemory(Context& context, GuestAddress baseAddressPoint
         return statusNoMemory;
 
     case VirtualAllocationResult::Success:
-        context.WriteU32(baseAddressPointer, address);
-        context.WriteU32(regionSizePointer, static_cast<uint32_t>(size));
+        *baseAddress = address;
+        *regionSize = static_cast<uint32_t>(size);
         return statusSuccess;
     }
 

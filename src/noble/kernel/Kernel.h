@@ -15,7 +15,8 @@
 
 namespace hle::krnl {
 struct TimeStampBundle;
-}
+struct CriticalSection;
+}  // namespace hle::krnl
 
 class Memory;
 class Scheduler;
@@ -81,8 +82,13 @@ public:
 
     // acquire a recursive guest critical section or queue the thread for a scheduler wait
     bool EnterCriticalSection(KThread& thread, GuestAddress address, bool tryOnly = false);
+    // acquire a section whose guest pointer has already been validated by a shim
+    bool EnterCriticalSection(KThread& thread, hle::Pointer<hle::krnl::CriticalSection> section,
+                              bool tryOnly = false);
     // release one recursion level and hand ownership to the next live waiter
     void LeaveCriticalSection(KThread& thread, GuestAddress address);
+    // release a section whose guest pointer has already been validated by a shim
+    void LeaveCriticalSection(KThread& thread, hle::Pointer<hle::krnl::CriticalSection> section);
 
 private:
     // refresh the shared timestamp record from the kernel clock origin
@@ -92,6 +98,11 @@ private:
 
     bool AllocateThreadStack(KThread& thread, uint32_t size);
 
+    // allocate and initialize the guest kthread, kpcr and tls storage
+    bool InitializeGuestThread(KThread& thread, const ThreadCreateInfo& info);
+    // release all guest allocations retained by a host thread
+    void FreeGuestThread(KThread& thread);
+
 private:
     Memory& memory_;
     Scheduler& scheduler_;
@@ -99,6 +110,11 @@ private:
     GuestAddress executableModule_ = 0;
     GuestAddress executableHeader_ = 0;
     uint32_t executableSystemFlags_ = 0;
+    uint32_t executableTLSSlots_ = KProcess::TLS_SLOT_COUNT;
+    uint32_t executableTLSSize_ = 0;
+    uint32_t executableTLSRawSize_ = 0;
+    GuestAddress executableTLSTemplate_ = 0;
+    std::mutex threadObjectsMutex_;
     std::mutex tlsMutex_;
     std::mutex criticalSectionMutex_;
     std::unordered_map<GuestAddress, std::deque<KThread*>> criticalSectionWaiters_;

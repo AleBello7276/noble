@@ -1,34 +1,37 @@
 #pragma once
 
+#include "GuestPointer.h"
 #include <cstddef>
 #include <cstdint>
 
+struct GuestListEntry;
+
 // guest loader record referenced by the executable module handle with all scalars stored big endian
 struct GuestModule {
-    uint32_t loadOrderLinks[2];
-    uint32_t memoryOrderLinks[2];
-    uint32_t initializationOrderLinks[2];
-    uint32_t dllBase;
-    uint32_t imageBase;
-    uint32_t imageSize;
+    GuestPointer<GuestListEntry> loadOrderLinks[2];
+    GuestPointer<GuestListEntry> memoryOrderLinks[2];
+    GuestPointer<GuestListEntry> initializationOrderLinks[2];
+    GuestPointer<void> dllBase;
+    GuestPointer<void> imageBase;
+    be<uint32_t> imageSize;
     struct UnicodeString {
-        uint16_t length;
-        uint16_t maximumLength;
-        uint32_t buffer;
+        be<uint16_t> length;
+        be<uint16_t> maximumLength;
+        GuestPointer<be<uint16_t>> buffer;
     } fullName, baseName;
-    uint32_t flags;
-    uint32_t fullImageSize;
-    uint32_t entryPoint;
-    uint16_t loadCount;
-    uint16_t moduleIndex;
-    uint32_t originalDllBase;
-    uint32_t checksum;
-    uint32_t loadFlags;
-    uint32_t timestamp;
-    uint32_t loadedImports;
-    uint32_t xexHeaderBase;
-    uint32_t closureRoot;
-    uint32_t traversalParent;
+    be<uint32_t> flags;
+    be<uint32_t> fullImageSize;
+    GuestPointer<void> entryPoint;
+    be<uint16_t> loadCount;
+    be<uint16_t> moduleIndex;
+    GuestPointer<void> originalDllBase;
+    be<uint32_t> checksum;
+    be<uint32_t> loadFlags;
+    be<uint32_t> timestamp;
+    GuestPointer<void> loadedImports;
+    GuestPointer<void> xexHeaderBase;
+    GuestPointer<GuestModule> closureRoot;
+    GuestPointer<GuestModule> traversalParent;
 };
 
 static_assert(sizeof(GuestModule) == 0x64);

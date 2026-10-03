@@ -1,5 +1,6 @@
 #pragma once
 
+#include "GuestPointer.h"
 #include "Loader/ImageLoader.h"
 #include "cpu/PpcContext.h"
 #include "emulator/Memory.h"
@@ -73,6 +74,8 @@ public:
     void Return(T value) {
         if constexpr (std::is_floating_point_v<T>) {
             cpu.FPRs[1].f64 = value;
+        } else if constexpr (detail::IsPointer<T>) {
+            Return(value.guest_address());
         } else {
             static_assert(std::is_integral_v<T> && sizeof(T) <= 8);
 
@@ -123,9 +126,13 @@ T Parameter(Context& context, Context::ArgumentCursor& cursor) {
         return context.memory;
     } else if constexpr (std::is_lvalue_reference_v<T> && std::is_same_v<Service, PPCContext>) {
         return context.cpu;
+    } else if constexpr (IsPointer<Service>) {
+        static_assert(!std::is_reference_v<T>, "hle guest pointers must be passed by value");
+        return Service(context.memory, context.NextArgument<GuestAddress>(cursor));
     } else {
         static_assert(!std::is_reference_v<T> && !std::is_pointer_v<T>,
-                      "hle guest parameters must be scalar values and host services must be references");
+                      "hle guest parameters must be scalars or typed guest pointers and host services must "
+                      "be references");
         return context.NextArgument<T>(cursor);
     }
 }
@@ -163,9 +170,7 @@ public:
     template <typename T>
     GuestAddress DefineVariable(XboxLibrary library, std::string_view name, T value) {
         static_assert(std::is_integral_v<T> && !std::is_same_v<T, bool>);
-        auto encoded = static_cast<std::make_unsigned_t<T>>(value);
-        if constexpr (std::endian::native == std::endian::little)
-            encoded = std::byteswap(encoded);
+        const be<T> encoded(value);
         return DefineVariableBytes(library, name, std::as_bytes(std::span{&encoded, 1}));
     }
 
@@ -173,9 +178,7 @@ public:
     template <typename T>
     void UpdateVariable(XboxLibrary library, std::string_view name, T value) {
         static_assert(std::is_integral_v<T> && !std::is_same_v<T, bool>);
-        auto encoded = static_cast<std::make_unsigned_t<T>>(value);
-        if constexpr (std::endian::native == std::endian::little)
-            encoded = std::byteswap(encoded);
+        const be<T> encoded(value);
         UpdateVariableBytes(library, name, std::as_bytes(std::span{&encoded, 1}));
     }
 
@@ -197,7 +200,7 @@ public:
     // replace exported bytes while preserving the storage address and size
     void UpdateVariableBytes(XboxLibrary library, std::string_view name, std::span<const std::byte> bytes);
 
-    // bind an ordinary function with scalar guest arguments and optional host service references
+    // bind an ordinary function with scalar or typed pointer arguments and optional host service references
     template <auto Function>
     void Register(XboxLibrary library, uint16_t ordinal) {
         RegisterShim<&detail::Shim<Function>::Invoke>(library, ordinal);
