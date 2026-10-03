@@ -4,8 +4,10 @@
 
 #include "cl_alu.h"
 #include "cl_control.h"
+#include "cl_fpu.h"
 #include "cl_memory.h"
 #include "cl_system.h"
+
 
 CLHandler(illegal) {
     // LOG_ERROR("illegal instruction ==>");

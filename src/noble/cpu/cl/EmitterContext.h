@@ -119,6 +119,11 @@ public:
 
     cranelift::Value get_cr_field(size_t field, size_t bit);
 
+    void update_fpscr(bool rc);
+
+    void store_fpscr(cranelift::Value value);
+    cranelift::Value load_fpscr();
+
 public:
     PPCFuncMap mFuncRanges;
     std::unordered_map<GuestAddress, cranelift::Block> clBlockMap;

@@ -330,3 +330,32 @@ cranelift::Value EmitterContext::get_cr_field(size_t field, size_t bit) {
                                           CRFieldBitOffset(field, bit));
     return value;
 }
+
+// this is a copy of what xenia is doing
+void EmitterContext::update_fpscr(bool rc) {
+    // FX  - preserved
+    // FEX - cleared
+    // VX  - cleared
+    // OX  - preserved
+
+    Value fpscr = load_fpscr();
+
+    fpscr = ins().band_imm_u(fpscr, 0x9FFFFFFFu);
+
+    store_fpscr(fpscr);
+
+    if (rc) {
+        // Xenia currently computes FX/FEX/VX/OX as zero,
+        // so arithmetic record forms produce CR1 = 0000.
+        ins().store(builder.memflags_new(), i32(0), vCpuState, CRFieldBitOffset(1));
+    }
+}
+
+cranelift::Value EmitterContext::load_fpscr() {
+    return ins().load(types::I32(), builder.memflags_new(), vCpuState,
+                      static_cast<int32_t>(offsetof(PPCContext, FPSCR)));
+}
+
+void EmitterContext::store_fpscr(Value value) {
+    ins().store(builder.memflags_new(), value, vCpuState, static_cast<int32_t>(offsetof(PPCContext, FPSCR)));
+}

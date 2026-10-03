@@ -3,12 +3,13 @@ cmake_minimum_required(VERSION 3.30)
 project(noble)
 
 
-set(Core 
+set(Core
+    noble/core/HostClock.cpp
 )
 if(WIN32)
-    list(APPEND Core noble/core/platform/WinAlloc.cpp)
+    list(APPEND Core noble/core/platform/WinAlloc.cpp noble/core/platform/WinClock.cpp)
 else()
-    list(APPEND Core noble/core/platform/PosixAlloc.cpp)
+    list(APPEND Core noble/core/platform/PosixAlloc.cpp noble/core/platform/PosixClock.cpp)
 endif()
 
 

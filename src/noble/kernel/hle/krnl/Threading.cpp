@@ -33,12 +33,18 @@ uint32_t KeTlsSetValue(Kernel& kernel, KThread& thread, uint32_t index, uint32_t
     return kernel.SetTLSValue(thread, index, value);
 }
 
+uint32_t KeQueryPerformanceFrequency() {
+    uint64_t result = Clock::guest_tick_frequency();
+    return static_cast<uint32_t>(result);
+}
+
 constexpr std::array exports{
     Bind<&KeGetCurrentProcessType>(XboxLibrary::XboxKrnl, "KeGetCurrentProcessType"),
     Bind<&KeTlsAlloc>(XboxLibrary::XboxKrnl, "KeTlsAlloc"),
     Bind<&KeTlsFree>(XboxLibrary::XboxKrnl, "KeTlsFree"),
     Bind<&KeTlsGetValue>(XboxLibrary::XboxKrnl, "KeTlsGetValue"),
     Bind<&KeTlsSetValue>(XboxLibrary::XboxKrnl, "KeTlsSetValue"),
+    Bind<&KeQueryPerformanceFrequency>(XboxLibrary::XboxKrnl, "KeQueryPerformanceFrequency"),
 };
 
 std::span<const Export> ThreadingExports() {

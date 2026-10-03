@@ -48,6 +48,11 @@ inline constexpr auto emitter_dispatch_table = [] {
     table[to_underlying(PpcOpcode::Xor)] = &cl_xor__handler;
     table[to_underlying(PpcOpcode::Nor)] = &cl_nor_handler;
 
+    table[to_underlying(PpcOpcode::Fmul)] = &cl_fmul_handler;
+    table[to_underlying(PpcOpcode::Fmuls)] = &cl_fmuls_handler;
+    table[to_underlying(PpcOpcode::Fcfid)] = &cl_fcfid_handler;
+    table[to_underlying(PpcOpcode::Fdiv)] = &cl_fdiv_handler;
+
     table[to_underlying(PpcOpcode::Dcbt)] = &cl_dcbt_handler;
     table[to_underlying(PpcOpcode::Dcbtst)] = &cl_dcbtst_handler;
 
