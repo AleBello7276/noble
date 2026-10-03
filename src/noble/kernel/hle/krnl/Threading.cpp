@@ -1,5 +1,6 @@
 #include "Threading.h"
 
+#include "core/HostClock.h"
 #include "kernel/Kernel.h"
 #include <array>
 
@@ -34,7 +35,7 @@ uint32_t KeTlsSetValue(Kernel& kernel, KThread& thread, uint32_t index, uint32_t
 }
 
 uint32_t KeQueryPerformanceFrequency() {
-    uint64_t result = Clock::guest_tick_frequency();
+    uint64_t result = HostClock::GetInstance().GetGuestTickFreq();
     return static_cast<uint32_t>(result);
 }
 

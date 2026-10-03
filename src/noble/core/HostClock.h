@@ -19,6 +19,11 @@ public:
     // subtract two readings and divide by the frequency to measure elapsed seconds
     virtual uint64_t GetTickCount() const = 0;
 
+    uint64_t GetGuestTickFreq() { return mGuestTickFrequency_; }
+
+private:
+    uint64_t mGuestTickFrequency_;
+
 protected:
     HostClock() = default;
 };

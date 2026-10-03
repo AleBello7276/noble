@@ -7,10 +7,14 @@
 #endif
 
 HostClock& HostClock::GetInstance() {
+    static HostClock& clock = []() -> HostClock& {
 #ifdef _WIN32
-    static WinClock clock;
+        static WinClock instance;
 #else
-    static PosixClock clock;
+        static PosixClock instance;
 #endif
+        instance.mGuestTickFrequency_ = instance.GetTickFrequency();
+        return instance;
+    }();
     return clock;
 }
