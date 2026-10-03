@@ -17,5 +17,6 @@ public:
 
     void* Allocate(size_t size) override;
     bool DecommitRegion(void* ptr, size_t size) override;
+    bool ProtectRegion(void* ptr, size_t size, MemoryProtection protection) override;
     void Release(void* ptr, size_t size) override;
 };

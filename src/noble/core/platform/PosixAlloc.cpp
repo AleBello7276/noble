@@ -17,11 +17,22 @@ void* PosixAlloc::Allocate(size_t size) {
 }
 
 bool PosixAlloc::DecommitRegion(void* ptr, size_t size) {
-    if (mprotect(ptr, size, PROT_NONE) != 0) return false;
+    if (mprotect(ptr, size, PROT_NONE) != 0)
+        return false;
     madvise(ptr, size, MADV_DONTNEED);
     return true;
 }
 
+bool PosixAlloc::ProtectRegion(void* ptr, size_t size, MemoryProtection protection) {
+    int flags = PROT_NONE;
+    if (protection == MemoryProtection::ReadOnly)
+        flags = PROT_READ;
+    else if (protection == MemoryProtection::ReadWrite)
+        flags = PROT_READ | PROT_WRITE;
+    return mprotect(ptr, size, flags) == 0;
+}
+
 void PosixAlloc::Release(void* ptr, size_t size) {
-    if (ptr) munmap(ptr, size);
+    if (ptr)
+        munmap(ptr, size);
 }

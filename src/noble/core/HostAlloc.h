@@ -1,6 +1,8 @@
 #pragma once
 #include <cstddef>
 
+enum class MemoryProtection { NoAccess, ReadOnly, ReadWrite };
+
 class HostAlloc {
 public:
     virtual ~HostAlloc() = default;
@@ -14,5 +16,8 @@ public:
     /* allocate `size` memory */
     virtual void* Allocate(size_t size) = 0;
     virtual bool DecommitRegion(void* ptr, size_t size) = 0;
+
+    // change access permissions on committed host pages
+    virtual bool ProtectRegion(void* ptr, size_t size, MemoryProtection protection) = 0;
     virtual void Release(void* ptr, size_t size) = 0;
 };

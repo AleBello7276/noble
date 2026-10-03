@@ -23,9 +23,7 @@ public:
 
     static constexpr Extensions none() noexcept { return Extensions{}; }
     static Extensions xenon() noexcept { return Extensions(ppc_extensions_xenon()); }
-    static Extensions gekko_broadway() noexcept {
-        return Extensions(ppc_extensions_gekko_broadway());
-    }
+    static Extensions gekko_broadway() noexcept { return Extensions(ppc_extensions_gekko_broadway()); }
     static constexpr Extensions from_bitmask(std::uint32_t bits) noexcept { return Extensions(bits); }
     constexpr std::uint32_t bitmask() const noexcept { return bits_; }
 
@@ -33,10 +31,10 @@ private:
     std::uint32_t bits_ = 0;
 };
 
-#define PPC_OPERAND_TYPE(name, type) \
-    struct name {                  \
-        type value;                \
-        bool operator==(const name&) const = default; \
+#define PPC_OPERAND_TYPE(name, type)                                                                         \
+    struct name {                                                                                            \
+        type value;                                                                                          \
+        bool operator==(const name&) const = default;                                                        \
     };
 PPC_OPERAND_TYPE(GPR, std::uint8_t)
 PPC_OPERAND_TYPE(FPR, std::uint8_t)
@@ -53,8 +51,8 @@ PPC_OPERAND_TYPE(OpaqueU, std::uint16_t)
 PPC_OPERAND_TYPE(VR, std::uint8_t)
 #undef PPC_OPERAND_TYPE
 
-using ArgumentValue = std::variant<std::monostate, GPR, FPR, SR, SPR, CRField, CRBit, GQR,
-                                   Uimm, Simm, Offset, BranchDest, OpaqueU, VR>;
+using ArgumentValue = std::variant<std::monostate, GPR, FPR, SR, SPR, CRField, CRBit, GQR, Uimm, Simm, Offset,
+                                   BranchDest, OpaqueU, VR>;
 
 struct Argument {
     ArgumentValue value;
@@ -64,10 +62,14 @@ struct Argument {
     Argument(T operand) : value(operand) {}
 
     template <typename T>
-    bool is() const noexcept { return std::holds_alternative<T>(value); }
+    bool is() const noexcept {
+        return std::holds_alternative<T>(value);
+    }
 
     template <typename T>
-    const T* get_if() const noexcept { return std::get_if<T>(&value); }
+    const T* get_if() const noexcept {
+        return std::get_if<T>(&value);
+    }
 
     bool operator==(const Argument&) const = default;
 };
@@ -92,27 +94,42 @@ struct ParsedIns {
 
 inline Argument from_ffi(PpcArgument arg) {
     switch (arg.kind) {
-    case PPC_GPR: return GPR{arg.value.gpr};
-    case PPC_FPR: return FPR{arg.value.fpr};
-    case PPC_SR: return SR{arg.value.sr};
-    case PPC_SPR: return SPR{arg.value.spr};
-    case PPC_CR_FIELD: return CRField{arg.value.cr_field};
-    case PPC_CR_BIT: return CRBit{arg.value.cr_bit};
-    case PPC_GQR: return GQR{arg.value.gqr};
-    case PPC_UIMM: return Uimm{arg.value.uimm};
-    case PPC_SIMM: return Simm{arg.value.simm};
-    case PPC_OFFSET: return Offset{arg.value.offset};
-    case PPC_BRANCH_DEST: return BranchDest{arg.value.branch_dest};
-    case PPC_OPAQUE_U: return OpaqueU{arg.value.opaque_u};
-    case PPC_VR: return VR{arg.value.vr};
-    case PPC_NONE: return {};
+    case PPC_GPR:
+        return GPR{arg.value.gpr};
+    case PPC_FPR:
+        return FPR{arg.value.fpr};
+    case PPC_SR:
+        return SR{arg.value.sr};
+    case PPC_SPR:
+        return SPR{arg.value.spr};
+    case PPC_CR_FIELD:
+        return CRField{arg.value.cr_field};
+    case PPC_CR_BIT:
+        return CRBit{arg.value.cr_bit};
+    case PPC_GQR:
+        return GQR{arg.value.gqr};
+    case PPC_UIMM:
+        return Uimm{arg.value.uimm};
+    case PPC_SIMM:
+        return Simm{arg.value.simm};
+    case PPC_OFFSET:
+        return Offset{arg.value.offset};
+    case PPC_BRANCH_DEST:
+        return BranchDest{arg.value.branch_dest};
+    case PPC_OPAQUE_U:
+        return OpaqueU{arg.value.opaque_u};
+    case PPC_VR:
+        return VR{arg.value.vr};
+    case PPC_NONE:
+        return {};
     }
     return {};
 }
 
 inline Arguments from_ffi(PpcArguments raw) {
     Arguments result;
-    result.count = raw.count <= result.items.size() ? raw.count : static_cast<std::uint8_t>(result.items.size());
+    result.count
+        = raw.count <= result.items.size() ? raw.count : static_cast<std::uint8_t>(result.items.size());
     for (std::size_t i = 0; i < result.items.size(); ++i)
         result.items[i] = from_ffi(raw.items[i]);
     return result;
@@ -230,4 +247,4 @@ struct Ins {
     bool field_rc128() const noexcept { return ppc_ins_field_rc128(raw()); }
 };
 
-} // namespace codec
+}  // namespace codec
