@@ -102,10 +102,17 @@ bool Memory::AllocateAtLocked(uint64_t address, uint64_t size) {
             return false;
     }
 
-    if (!Hostallocator_->CommitRegion(mMemoryBase_ + backing, size))
+    auto [allocation, inserted] = allocations_.emplace(
+        backing, Allocation{size, static_cast<uint32_t>(address),
+                            std::vector<uint8_t>(size / 4096, uint8_t(MemoryProtection::ReadWrite) + 1)});
+    if (!inserted)
         return false;
 
-    allocations_.emplace(backing, Allocation{size, static_cast<uint32_t>(address)});
+    if (!Hostallocator_->CommitRegion(mMemoryBase_ + backing, size)) {
+        allocations_.erase(allocation);
+        return false;
+    }
+
     std::memset(mMemoryBase_ + backing, 0, size);
     return true;
 }
@@ -123,23 +130,11 @@ GuestAddress Memory::AllocateVirtual(size_t size, size_t alignment, GuestHeapKin
 
     std::scoped_lock lock(mutex_);
 
-    const uint64_t backing_begin = BackingAddress(heap.begin);
-    const uint64_t backing_end = backing_begin + (heap.end - heap.begin);
-
-    // keep the zero page free and search gaps in address order
-    uint64_t candidate = AlignUp(backing_begin == 0 ? heap.page_size : backing_begin, alignment);
-
-    for (auto it = allocations_.lower_bound(backing_begin);
-         it != allocations_.end() && it->first < backing_end; ++it) {
-        if (candidate + rounded <= it->first)
-            break;
-        candidate = AlignUp(std::max(candidate, it->first + it->second.size), alignment);
-    }
-
-    if (candidate + rounded > backing_end)
+    const uint64_t candidate = FindFreeLocked(heap, rounded, alignment, false);
+    if (candidate == kXboxMemorySize)
         return 0;
 
-    const uint64_t guest = heap.begin + candidate - backing_begin;
+    const uint64_t guest = heap.begin + candidate - BackingAddress(heap.begin);
     if (!AllocateAtLocked(guest, rounded))
         return 0;
 
@@ -176,10 +171,8 @@ bool Memory::FreeVirtual(GuestAddress address) {
     return true;
 }
 
-bool Memory::IsMapped(GuestAddress address, size_t size) const {
-    std::scoped_lock lock(mutex_);
-
-    if (!mMemoryBase_ || !size || address == 0 || uint64_t(address) + size > kXboxMemorySize)
+bool Memory::IsAccessibleLocked(GuestAddress address, size_t size, bool checkAccess, bool write) const {
+    if (!mMemoryBase_ || !size || address == 0 || size > kXboxMemorySize - address)
         return false;
 
     const uint64_t backing = BackingAddress(address);
@@ -194,9 +187,199 @@ bool Memory::IsMapped(GuestAddress address, size_t size) const {
         return false;
 
     --it;
-    return backing >= it->first && backing + size <= it->first + it->second.size;
+    if (backing < it->first || backing - it->first >= it->second.size
+        || size > it->second.size - (backing - it->first))
+        return false;
+
+    const size_t first = (backing - it->first) / 4096;
+    const size_t last = (backing - it->first + size - 1) / 4096;
+
+    for (size_t page = first; page <= last; ++page) {
+        const uint8_t state = it->second.pages[page];
+
+        if (!state || (checkAccess && state < (write ? 3 : 2)))
+            return false;
+    }
+    return true;
+}
+
+bool Memory::IsMapped(GuestAddress address, size_t size) const {
+    std::scoped_lock lock(mutex_);
+    return IsAccessibleLocked(address, size, false, false);
+}
+
+bool Memory::IsAccessible(GuestAddress address, size_t size, bool write) const {
+    std::scoped_lock lock(mutex_);
+    return IsAccessibleLocked(address, size, true, write);
 }
 
 void* Memory::Translate(uint32_t address, size_t size) const {
-    return IsMapped(address, size) ? mMemoryBase_ + BackingAddress(address) : nullptr;
+    return IsAccessible(address, size) ? mMemoryBase_ + BackingAddress(address) : nullptr;
+}
+
+size_t Memory::VirtualPageSize(GuestAddress address) {
+    if (address < 0x40000000 || (address >= 0x90000000 && address < 0xA0000000))
+        return 4096;
+
+    if ((address >= 0x40000000 && address < 0x7F000000) || (address >= 0x80000000 && address < 0x90000000))
+        return 65536;
+
+    return 0;
+}
+
+uint64_t Memory::FindFreeLocked(const Heap& heap, uint64_t size, uint64_t alignment, bool topDown) const {
+    const uint64_t begin = BackingAddress(heap.begin);
+    const uint64_t end = begin + heap.end - heap.begin;
+
+    uint64_t cursor = begin == 0 ? heap.page_size : begin;
+    uint64_t selected = kXboxMemorySize;
+
+    const auto gap = [&](uint64_t limit) {
+        if (limit < cursor || size > limit - cursor)
+            return;
+
+        const uint64_t candidate
+            = topDown ? (limit - size) / alignment * alignment : AlignUp(cursor, alignment);
+
+        if (candidate >= cursor && candidate <= limit - size)
+            selected = candidate;
+    };
+
+    auto it = allocations_.upper_bound(begin);
+    if (it != allocations_.begin())
+        --it;
+
+    for (; it != allocations_.end() && it->first < end; ++it) {
+        gap(it->first);
+
+        if (!topDown && selected != kXboxMemorySize)
+            return selected;
+
+        cursor = std::max(cursor, it->first + it->second.size);
+    }
+
+    gap(end);
+    return selected;
+}
+
+bool Memory::CommitLocked(uint64_t backing, Allocation& allocation, uint64_t offset, uint64_t size,
+                          MemoryProtection protection) {
+    const size_t first = offset / 4096;
+    const size_t end = (offset + size) / 4096;
+
+    std::vector<std::pair<size_t, size_t>> runs;
+    for (size_t page = first; page < end;) {
+        if (allocation.pages[page]) {
+            ++page;
+            continue;
+        }
+
+        const size_t start = page++;
+
+        while (page < end && !allocation.pages[page])
+            ++page;
+
+        runs.emplace_back(start, page - start);
+    }
+
+    size_t completed = 0;
+    bool success = true;
+
+    for (const auto [page, count] : runs) {
+        void* ptr = mMemoryBase_ + backing + page * 4096;
+        const size_t bytes = count * 4096;
+
+        if (!Hostallocator_->CommitRegion(ptr, bytes)) {
+            success = false;
+            break;
+        }
+
+        ++completed;
+        std::memset(ptr, 0, bytes);
+
+        if (!Hostallocator_->ProtectRegion(ptr, bytes, protection)) {
+            success = false;
+            break;
+        }
+    }
+
+    if (!success) {
+        for (size_t i = 0; i < completed; ++i)
+            Hostallocator_->DecommitRegion(mMemoryBase_ + backing + runs[i].first * 4096,
+                                           runs[i].second * 4096);
+
+        return false;
+    }
+
+    for (const auto [page, count] : runs)
+        std::fill_n(allocation.pages.begin() + page, count, uint8_t(protection) + 1);
+
+    return true;
+}
+
+VirtualAllocationResult Memory::AllocateVirtualRegion(GuestAddress address, size_t size, GuestHeapKind kind,
+                                                      bool reserve, bool commit, bool topDown,
+                                                      MemoryProtection protection, GuestAddress& result) {
+    const Heap* heap = address ? HeapAt(address) : &HeapFor(kind);
+
+    if (!heap || !size || (!reserve && !commit) || heap->begin >= 0xA0000000
+        || (kind != GuestHeapKind::Virtual4K && kind != GuestHeapKind::Virtual64K)
+        || address % heap->page_size || size % heap->page_size)
+        return VirtualAllocationResult::InvalidAddress;
+
+    if (size > heap->end - heap->begin)
+        return VirtualAllocationResult::NoMemory;
+
+    if (address && (address < heap->page_size || size > heap->end - address))
+        return VirtualAllocationResult::InvalidAddress;
+
+    std::scoped_lock lock(mutex_);
+    if (!mMemoryBase_)
+        return VirtualAllocationResult::NoMemory;
+
+    uint64_t backing = address ? uint64_t(address) : FindFreeLocked(*heap, size, heap->page_size, topDown);
+    if (backing == kXboxMemorySize)
+        return VirtualAllocationResult::NoMemory;
+
+    auto next = allocations_.upper_bound(backing);
+    if (next != allocations_.begin()) {
+        auto previous = std::prev(next);
+
+        if (backing < previous->first + previous->second.size) {
+            if (reserve || size > previous->first + previous->second.size - backing)
+                return VirtualAllocationResult::Conflict;
+
+            if (!CommitLocked(previous->first, previous->second, backing - previous->first, size, protection))
+                return VirtualAllocationResult::NoMemory;
+            result = static_cast<GuestAddress>(backing);
+
+            return VirtualAllocationResult::Success;
+        }
+    }
+
+    if (next != allocations_.end() && next->first < backing + size)
+        return VirtualAllocationResult::Conflict;
+
+    if (address && !reserve)
+        return VirtualAllocationResult::Conflict;
+
+    auto [allocation, inserted] = allocations_.emplace(
+        backing, Allocation{size, static_cast<GuestAddress>(backing), std::vector<uint8_t>(size / 4096)});
+
+    if (!inserted)
+        return VirtualAllocationResult::Conflict;
+
+    try {
+        if (commit && !CommitLocked(backing, allocation->second, 0, size, protection)) {
+            allocations_.erase(allocation);
+            return VirtualAllocationResult::NoMemory;
+        }
+    } catch (...) {
+        allocations_.erase(allocation);
+        throw;
+    }
+
+    result = static_cast<GuestAddress>(backing);
+
+    return VirtualAllocationResult::Success;
 }

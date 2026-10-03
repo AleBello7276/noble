@@ -1,7 +1,7 @@
 #pragma once
 
-#include <cstdint>
 #include <bitset>
+#include <cstdint>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -28,13 +28,19 @@ class KThread;
 
 using GuestAddress = uint32_t;
 
+// identify the guest execution environment using the kernel process type values
+enum class ProcessType : uint32_t { Idle = 0, Title = 1, System = 2 };
+
 class KProcess final : public KernelObject {
 public:
     static constexpr size_t TLS_SLOT_COUNT = 2048;
-    explicit KProcess(uint32_t id);
+    explicit KProcess(uint32_t id, ProcessType type = ProcessType::Title);
     ~KProcess();
 
     uint32_t id() const { return id_; }
+
+    // get the process type inherited by threads belonging to this process
+    ProcessType type() const { return type_; }
 
     bool terminated() const { return terminated_; }
 
@@ -44,6 +50,7 @@ private:
     friend class Kernel;
 
     uint32_t id_;
+    ProcessType type_;
 
     GuestAddress mImageBase_ = 0;
     GuestAddress mEntryPoint_ = 0;

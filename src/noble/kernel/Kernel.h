@@ -2,7 +2,9 @@
 
 #include <chrono>
 #include <cstdint>
+#include <deque>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 #include "KProcess.h"
@@ -21,6 +23,7 @@ class Scheduler;
 struct ProcessCreateInfo {
     GuestAddress image_base = 0;
     GuestAddress entry_point = 0;
+    ProcessType type = ProcessType::Title;
 };
 
 struct ThreadCreateInfo {
@@ -47,6 +50,11 @@ public:
     // publish the executable guest loader record and retain its original xex header
     bool SetExecutableModule(const XLoader::IImage& image, std::string_view imagePath = {});
 
+    // test a system flag bit from the executable's retained xex metadata
+    bool CheckExecutablePrivilege(uint32_t privilege) const {
+        return executableModule_ && privilege < 32 && (executableSystemFlags_ & (uint32_t(1) << privilege));
+    }
+
     KThread* CreateThread(KProcess* process, const ThreadCreateInfo& info);
     void StartThread(KThread* thread);
 
@@ -71,6 +79,11 @@ public:
     // update the calling thread value for an allocated tls index
     bool SetTLSValue(KThread& thread, uint32_t index, uint32_t value);
 
+    // acquire a recursive guest critical section or queue the thread for a scheduler wait
+    bool EnterCriticalSection(KThread& thread, GuestAddress address, bool tryOnly = false);
+    // release one recursion level and hand ownership to the next live waiter
+    void LeaveCriticalSection(KThread& thread, GuestAddress address);
+
 private:
     // refresh the shared timestamp record from the kernel clock origin
     void UpdateTimeStampBundle();
@@ -85,7 +98,10 @@ private:
     hle::Registry imports_;
     GuestAddress executableModule_ = 0;
     GuestAddress executableHeader_ = 0;
+    uint32_t executableSystemFlags_ = 0;
     std::mutex tlsMutex_;
+    std::mutex criticalSectionMutex_;
+    std::unordered_map<GuestAddress, std::deque<KThread*>> criticalSectionWaiters_;
 
     uint32_t next_process_id_ = 1;
     uint32_t next_thread_id_ = 1;

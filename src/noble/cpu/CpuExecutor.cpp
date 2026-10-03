@@ -52,5 +52,9 @@ ExecutionResult CpuExecutor::Execute(PPCContext& context, const std::atomic_bool
             return {ExecutionReason::Fault, context.FaultAddress};
 
         context.CIA = context.NIA;
+        if (context.Action == HostAction::Wait) {
+            context.Action = HostAction::None;
+            return {ExecutionReason::Waiting};
+        }
     }
 }

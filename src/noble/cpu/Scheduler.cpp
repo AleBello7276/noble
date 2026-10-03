@@ -176,7 +176,7 @@ void Scheduler::HandleExecutionResult(HWT_ID processor_id, KThread* thread, Exec
                 thread->exit_code = result.fault_address;
             }
 
-        } else if (result.reason == ExecutionReason::Waiting) {
+        } else if (result.reason == ExecutionReason::Waiting && thread->mWaitPending) {
             thread->mState = ThreadState::Waiting;
 
         } else {
@@ -187,6 +187,33 @@ void Scheduler::HandleExecutionResult(HWT_ID processor_id, KThread* thread, Exec
 
     // notify all
     cv_.notify_all();
+}
+
+bool Scheduler::PrepareWait(KThread* thread) {
+    std::scoped_lock lock(mutex_);
+    if (!thread || thread->mState == ThreadState::Terminated || thread->mWaitPending
+        || thread->mTerminateRequested.load(std::memory_order_acquire))
+        return false;
+    thread->mWaitPending = true;
+    return true;
+}
+
+bool Scheduler::WakeThread(KThread* thread) {
+    {
+        std::scoped_lock lock(mutex_);
+        if (!thread || !thread->mWaitPending || thread->mState == ThreadState::Terminated
+            || thread->mTerminateRequested.load(std::memory_order_acquire))
+            return false;
+
+        thread->mWaitPending = false;
+        if (thread->mState == ThreadState::Waiting) {
+            thread->mState = ThreadState::Ready;
+            ready_queue_.push_back(thread);
+        }
+        // a running worker handles an early wake when it processes the waiting result
+    }
+    cv_.notify_all();
+    return true;
 }
 
 KThread* Scheduler::CurrentThread() const {

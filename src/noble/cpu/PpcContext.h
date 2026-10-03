@@ -150,6 +150,8 @@ class KThread;
 
 enum class PPCFault : uint32_t { None, UnimplementedImport, HLEFailure, UncompiledTarget, MemoryAccess };
 
+enum class HostAction : uint32_t { None, Wait };
+
 // a Xenon Register File
 struct PPCContext {
     static constexpr size_t GPR_COUNT = 32;
@@ -168,6 +170,8 @@ struct PPCContext {
     KThread* HostThread = nullptr;
     PPCFault Fault = PPCFault::None;
     uint32_t FaultAddress = 0;
+    // request a dispatcher exit after returning from a host service
+    HostAction Action = HostAction::None;
 
     /* continue... */
 };

@@ -145,12 +145,16 @@ uint64_t Context::ReadU64(GuestAddress address) const {
 }
 
 void Context::WriteU32(GuestAddress address, uint32_t value) const {
+    if (!memory.IsAccessible(address, sizeof(value), true))
+        throw std::out_of_range("hle write to inaccessible guest memory");
     value = byte_swap(value);
 
     std::memcpy(Translate(address, sizeof(value)), &value, sizeof(value));
 }
 
 void Context::WriteU64(GuestAddress address, uint64_t value) const {
+    if (!memory.IsAccessible(address, sizeof(value), true))
+        throw std::out_of_range("hle write to inaccessible guest memory");
     value = byte_swap(value);
 
     std::memcpy(Translate(address, sizeof(value)), &value, sizeof(value));

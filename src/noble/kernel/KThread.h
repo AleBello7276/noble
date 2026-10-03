@@ -1,6 +1,6 @@
 #pragma once
-#include <atomic>
 #include <array>
+#include <atomic>
 #include <stdint.h>
 
 #include "KObject.h"
@@ -57,6 +57,8 @@ public:
     uint32_t exit_code = 0;
     bool faulted = false;
     std::atomic_bool mTerminateRequested = false;
+    // scheduler mutex protects a wait prepared while the worker is still returning from guest code
+    bool mWaitPending = false;
 
 private:
     ThreadID id_;

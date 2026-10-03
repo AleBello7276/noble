@@ -1,6 +1,7 @@
 #include "Kernel.h"
 
 #include "GuestModule.h"
+#include "Loader/XEXImage.h"
 #include "Logger.h"
 #include "core/byte_swap.h"
 #include "cpu/Scheduler.h"
@@ -9,6 +10,21 @@
 #include "hle/krnl/Variables.h"
 #include <algorithm>
 #include <cstring>
+
+// require an aligned writable guest critical section before accessing its shared state
+hle::krnl::CriticalSection* CheckedCriticalSection(Memory& memory, GuestAddress address) {
+    if (address % alignof(hle::krnl::CriticalSection)
+        || !memory.IsAccessible(address, sizeof(hle::krnl::CriticalSection), true))
+        throw std::out_of_range("critical section is not in aligned writable guest memory");
+
+    auto* section = static_cast<hle::krnl::CriticalSection*>(
+        memory.Translate(address, sizeof(hle::krnl::CriticalSection)));
+
+    if (section->type != 1)
+        throw std::invalid_argument("critical section has an invalid object type");
+
+    return section;
+}
 
 Kernel::Kernel(Memory& memory, Scheduler& scheduler)
     : memory_(memory), scheduler_(scheduler), imports_(*this, memory) {}
@@ -23,16 +39,21 @@ bool Kernel::Initialize() {
     try {
         hle::RegisterExports(imports_);
         const auto timestampAddress = imports_.VariableAddress(XboxLibrary::XboxKrnl, "KeTimeStampBundle");
+
         timeStampBundle_ = static_cast<hle::krnl::TimeStampBundle*>(
             memory_.Translate(timestampAddress, sizeof(hle::krnl::TimeStampBundle)));
         clockStart_ = std::chrono::steady_clock::now();
+
         using ClockUnits = std::chrono::duration<int64_t, std::ratio<1, 10000000>>;
         constexpr int64_t windowsEpochOffset = 116444736000000000LL;
+
         systemTimeStart_
             = std::chrono::duration_cast<ClockUnits>(std::chrono::system_clock::now().time_since_epoch())
                   .count()
               + windowsEpochOffset;
+
         UpdateTimeStampBundle();
+
         timeStampTimer_ = std::jthread([this](std::stop_token stop) {
             while (!stop.stop_requested()) {
                 UpdateTimeStampBundle();
@@ -42,6 +63,7 @@ bool Kernel::Initialize() {
     } catch (const std::exception& error) {
         LOG_ERROR("Unable to initialize kernel exports: {}", error.what());
         timeStampBundle_ = nullptr;
+
         imports_.ClearVariables();
         return false;
     }
@@ -54,6 +76,11 @@ void Kernel::Shutdown() {
     if (timeStampTimer_.joinable())
         timeStampTimer_.join();
     timeStampBundle_ = nullptr;
+
+    {
+        std::scoped_lock lock(criticalSectionMutex_);
+        criticalSectionWaiters_.clear();
+    }
 
     for (auto& process : processes_)
         for (auto& thread : process->threads_)
@@ -71,6 +98,7 @@ void Kernel::Shutdown() {
 
     executableModule_ = 0;
     executableHeader_ = 0;
+    executableSystemFlags_ = 0;
 }
 
 void Kernel::UpdateTimeStampBundle() {
@@ -95,9 +123,33 @@ bool Kernel::SetExecutableModule(const XLoader::IImage& image, std::string_view 
         return false;
     }
 
+    uint32_t systemFlags = 0;
     try {
         if (headerAddress)
             std::memcpy(memory_.Translate(headerAddress, header.size()), header.data(), header.size());
+
+        if (!header.empty()) {
+            if (header.size() < 0x18)
+                throw std::invalid_argument("truncated executable xex header");
+
+            const auto word = [&](size_t offset) {
+                uint32_t value;
+                std::memcpy(&value, header.data() + offset, sizeof(value));
+                return byte_swap(value);
+            };
+
+            const uint64_t tableEnd = 0x18 + uint64_t(word(0x14)) * 8;
+            if (word(0) != 0x58455832 || tableEnd > header.size() || tableEnd > word(8)
+                || word(8) > header.size())
+                throw std::invalid_argument("invalid executable xex optional header table");
+
+            for (size_t offset = 0x18; offset < tableEnd; offset += 8) {
+                if (word(offset) == XLoader::SystemFlags) {
+                    systemFlags = word(offset + 4);
+                    break;
+                }
+            }
+        }
 
         GuestModule record{};
         record.imageBase = byte_swap(image.getBaseAddress());
@@ -123,11 +175,12 @@ bool Kernel::SetExecutableModule(const XLoader::IImage& image, std::string_view 
 
     executableModule_ = recordAddress;
     executableHeader_ = headerAddress;
+    executableSystemFlags_ = systemFlags;
     return true;
 }
 
 KProcess* Kernel::CreateGuestProcess(const ProcessCreateInfo& info) {
-    auto process = std::make_unique<KProcess>(next_process_id_++);
+    auto process = std::make_unique<KProcess>(next_process_id_++, info.type);
 
     process->mImageBase_ = info.image_base;
     process->mEntryPoint_ = info.entry_point;
@@ -213,6 +266,111 @@ KThread* Kernel::CreateInitialThread(KProcess* process) {
     info.create_suspended = false;
 
     return CreateThread(process, info);
+}
+
+bool Kernel::EnterCriticalSection(KThread& thread, GuestAddress address, bool tryOnly) {
+    if (!thread.id())
+        throw std::invalid_argument("critical section owner must have a nonzero thread id");
+
+    std::scoped_lock lock(criticalSectionMutex_);
+    auto* section = CheckedCriticalSection(memory_, address);
+
+    const uint32_t owner = byte_swap(section->owningThread);
+    const uint32_t recursion = byte_swap(section->recursionCount);
+    const uint32_t count = byte_swap(section->lockCount);
+
+    if (owner == 0 && recursion == 0 && count == UINT32_MAX) {
+        section->lockCount = 0;
+        section->recursionCount = byte_swap(uint32_t(1));
+        // use noble thread ids until the kernel exposes guest kthread objects
+        section->owningThread = byte_swap(thread.id());
+        return true;
+    }
+
+    if (!owner || !recursion || count > INT32_MAX || recursion > uint64_t(count) + 1)
+        throw std::invalid_argument("critical section has inconsistent ownership state");
+
+    if (owner == thread.id()) {
+        if (recursion == INT32_MAX || count == INT32_MAX)
+            throw std::overflow_error("critical section recursion overflow");
+
+        section->lockCount = byte_swap(count + 1);
+        section->recursionCount = byte_swap(recursion + 1);
+        return true;
+    }
+
+    if (tryOnly)
+        return false;
+
+    if (count == INT32_MAX)
+        throw std::overflow_error("critical section waiter count overflow");
+
+    auto& waiters = criticalSectionWaiters_[address];
+    waiters.push_back(&thread);
+
+    if (!scheduler_.PrepareWait(&thread)) {
+        waiters.pop_back();
+
+        if (waiters.empty())
+            criticalSectionWaiters_.erase(address);
+
+        throw std::runtime_error("unable to prepare critical section wait");
+    }
+
+    section->lockCount = byte_swap(count + 1);
+    return false;
+}
+
+void Kernel::LeaveCriticalSection(KThread& thread, GuestAddress address) {
+    std::scoped_lock lock(criticalSectionMutex_);
+    auto* section = CheckedCriticalSection(memory_, address);
+    const uint32_t owner = byte_swap(section->owningThread);
+
+    uint32_t recursion = byte_swap(section->recursionCount);
+    uint32_t count = byte_swap(section->lockCount);
+
+    if (!thread.id() || owner != thread.id() || !recursion || count > INT32_MAX
+        || recursion > uint64_t(count) + 1)
+        throw std::invalid_argument("critical section release by a nonowner or invalid recursion state");
+
+    auto waiters = criticalSectionWaiters_.find(address);
+    const size_t waiterCount = waiters == criticalSectionWaiters_.end() ? 0 : waiters->second.size();
+    if (uint64_t(count) + 1 - recursion != waiterCount)
+        throw std::invalid_argument("critical section waiter state does not match the kernel queue");
+
+    --recursion;
+    --count;
+    section->lockCount = byte_swap(count);
+    section->recursionCount = byte_swap(recursion);
+
+    if (recursion)
+        return;
+
+    section->owningThread = 0;
+
+    if (waiters == criticalSectionWaiters_.end())
+        return;
+
+    while (!waiters->second.empty()) {
+        KThread* next = waiters->second.front();
+        waiters->second.pop_front();
+        // publish ownership before a released worker can resume the waiting thread
+        section->owningThread = byte_swap(next->id());
+        section->recursionCount = byte_swap(uint32_t(1));
+
+        if (scheduler_.WakeThread(next)) {
+            if (waiters->second.empty())
+                criticalSectionWaiters_.erase(waiters);
+
+            return;
+        }
+        // remove the acquisition count of a waiter that was terminated before handoff
+        section->owningThread = 0;
+        section->recursionCount = 0;
+        section->lockCount = byte_swap(--count);
+    }
+
+    criticalSectionWaiters_.erase(waiters);
 }
 
 KThread* Kernel::CurrentThread() {

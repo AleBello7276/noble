@@ -38,6 +38,12 @@ public:
     void WaitForThread(KThread* thread);
     void TerminateThread(KThread* thread, uint32_t exitCode);
 
+    // prepare a guest wait before its current worker returns to the scheduler
+    bool PrepareWait(KThread* thread);
+
+    // wake a prepared or parked wait without scheduling a thread on two workers
+    bool WakeThread(KThread* thread);
+
 private:
     /* beating main loop */
     void WorkerMain(HWT_ID processor_id, std::stop_token stop_token);
