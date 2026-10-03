@@ -54,6 +54,7 @@ using SigRef = EntityId<struct SigRefTag>;
 using MemFlags = ClMemFlags;
 using Linkage = ClLinkage;
 using IntCC = ClIntCC;
+using FloatCC = ClFloatCC;
 using Endianness = ClEndianness;
 using CallConv = ClCallConv;
 using TrapCode = ClTrapCode;
@@ -787,6 +788,107 @@ public:
     // divide the left floating point value by the right
     CL_BINARY_METHOD(fdiv)
 #undef CL_BINARY_METHOD
+
+    // reinterpret equal-sized types without numerical conversion using flags from this function
+    // specify endianness when vector lane counts differ and use builder memflags_new for scalar casts
+    Value bitcast(Type type, MemFlags flags, Value value) const noexcept {
+        return Value{cl_ins_bitcast(builder_, type, flags, value.raw())};
+    }
+
+    // copy the sign bit of right onto left without changing the other bits
+    Value fcopysign(Value left, Value right) const noexcept {
+        return Value{cl_ins_fcopysign(builder_, left.raw(), right.raw())};
+    }
+
+    // choose the smaller float and propagate nan with negative zero preferred over positive zero
+    Value fmin(Value left, Value right) const noexcept {
+        return Value{cl_ins_fmin(builder_, left.raw(), right.raw())};
+    }
+
+    // choose the larger float and propagate nan with positive zero preferred over negative zero
+    Value fmax(Value left, Value right) const noexcept {
+        return Value{cl_ins_fmax(builder_, left.raw(), right.raw())};
+    }
+
+    // compute the floating point square root
+    Value sqrt(Value value) const noexcept { return Value{cl_ins_sqrt(builder_, value.raw())}; }
+
+    // flip the floating point sign bit without changing the other bits
+    Value fneg(Value value) const noexcept { return Value{cl_ins_fneg(builder_, value.raw())}; }
+
+    // clear the floating point sign bit without changing the other bits
+    Value fabs(Value value) const noexcept { return Value{cl_ins_fabs(builder_, value.raw())}; }
+
+    // round toward positive infinity and keep the floating point type
+    Value ceil(Value value) const noexcept { return Value{cl_ins_ceil(builder_, value.raw())}; }
+
+    // round toward negative infinity and keep the floating point type
+    Value floor(Value value) const noexcept { return Value{cl_ins_floor(builder_, value.raw())}; }
+
+    // round toward zero and keep the floating point type
+    Value trunc(Value value) const noexcept { return Value{cl_ins_trunc(builder_, value.raw())}; }
+
+    // round to the nearest integral float with ties to even
+    Value nearest(Value value) const noexcept { return Value{cl_ins_nearest(builder_, value.raw())}; }
+
+    // convert f64x2 to f32x4 with rounding to nearest ties to even and zero the upper two lanes
+    Value fvdemote(Value value) const noexcept { return Value{cl_ins_fvdemote(builder_, value.raw())}; }
+
+    // convert the lower two lanes of f32x4 to f64x2 and discard the upper lanes
+    Value fvpromote_low(Value value) const noexcept {
+        return Value{cl_ins_fvpromote_low(builder_, value.raw())};
+    }
+
+    // convert a scalar float to a wider float type preserving its numerical value
+    Value fpromote(Type type, Value value) const noexcept {
+        return Value{cl_ins_fpromote(builder_, type, value.raw())};
+    }
+
+    // convert a scalar float to a narrower float type with rounding to nearest ties to even
+    Value fdemote(Type type, Value value) const noexcept {
+        return Value{cl_ins_fdemote(builder_, type, value.raw())};
+    }
+
+    // convert a scalar float to an unsigned integer toward zero and trap on nan or overflow
+    Value fcvt_to_uint(Type type, Value value) const noexcept {
+        return Value{cl_ins_fcvt_to_uint(builder_, type, value.raw())};
+    }
+
+    // convert a scalar float to a signed integer toward zero and trap on nan or overflow
+    Value fcvt_to_sint(Type type, Value value) const noexcept {
+        return Value{cl_ins_fcvt_to_sint(builder_, type, value.raw())};
+    }
+
+    // convert float lanes to unsigned integers toward zero with clamping and nan converted to zero
+    Value fcvt_to_uint_sat(Type type, Value value) const noexcept {
+        return Value{cl_ins_fcvt_to_uint_sat(builder_, type, value.raw())};
+    }
+
+    // convert float lanes to signed integers toward zero with clamping and nan converted to zero
+    Value fcvt_to_sint_sat(Type type, Value value) const noexcept {
+        return Value{cl_ins_fcvt_to_sint_sat(builder_, type, value.raw())};
+    }
+
+    // convert unsigned integer lanes to floats with rounding to nearest ties to even
+    Value fcvt_from_uint(Type type, Value value) const noexcept {
+        return Value{cl_ins_fcvt_from_uint(builder_, type, value.raw())};
+    }
+
+    // convert signed integer lanes to floats with rounding to nearest ties to even
+    Value fcvt_from_sint(Type type, Value value) const noexcept {
+        return Value{cl_ins_fcvt_from_sint(builder_, type, value.raw())};
+    }
+
+    // compute left times right plus addend with a single rounding and matching float types
+    Value fma(Value left, Value right, Value addend) const noexcept {
+        return Value{cl_ins_fma(builder_, left.raw(), right.raw(), addend.raw())};
+    }
+
+    // compare matching float types with an i8 scalar result or a lane mask for vectors
+    // not_equal includes nan while ordered_not_equal excludes nan
+    Value fcmp(FloatCC condition, Value left, Value right) const noexcept {
+        return Value{cl_ins_fcmp(builder_, static_cast<std::uint32_t>(condition), left.raw(), right.raw())};
+    }
 
     // negate an integer value
     Value ineg(Value value) const noexcept { return Value{cl_ins_ineg(builder_, value.raw())}; }

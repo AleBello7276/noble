@@ -153,3 +153,71 @@ CLHandler(stdx) {
 CLHandler(stdux) {
     emit_store_indexed<64, true>(e_, info_);
 }
+
+// single
+CLHandler(lfs) {
+    emit_fload<32>(e_, info_);
+}
+
+CLHandler(lfsu) {
+    emit_fload<32, true>(e_, info_);
+}
+
+CLHandler(lfsx) {
+    emit_fload_indexed<32>(e_, info_);
+}
+
+CLHandler(lfsux) {
+    emit_fload_indexed<32, true>(e_, info_);
+}
+
+// double
+CLHandler(lfd) {
+    emit_fload<64>(e_, info_);
+}
+
+CLHandler(lfdu) {
+    emit_fload<64, true>(e_, info_);
+}
+
+CLHandler(lfdx) {
+    emit_fload_indexed<64>(e_, info_);
+}
+
+CLHandler(lfdux) {
+    emit_fload_indexed<64, true>(e_, info_);
+}
+
+// single
+CLHandler(stfs) {
+    emit_fstore<32>(e_, info_);
+}
+
+CLHandler(stfsu) {
+    emit_fstore<32, true>(e_, info_);
+}
+
+CLHandler(stfsx) {
+    emit_fstore_indexed<32>(e_, info_);
+}
+
+CLHandler(stfsux) {
+    emit_fstore_indexed<32, true>(e_, info_);
+}
+
+// double
+CLHandler(stfd) {
+    emit_fstore<64>(e_, info_);
+}
+
+CLHandler(stfdu) {
+    emit_fstore<64, true>(e_, info_);
+}
+
+CLHandler(stfdx) {
+    emit_fstore_indexed<64>(e_, info_);
+}
+
+CLHandler(stfdux) {
+    emit_fstore_indexed<64, true>(e_, info_);
+}

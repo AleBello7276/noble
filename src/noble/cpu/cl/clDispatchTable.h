@@ -91,5 +91,25 @@ inline constexpr auto emitter_dispatch_table = [] {
     table[to_underlying(PpcOpcode::Stdx)] = &cl_stdx_handler;
     table[to_underlying(PpcOpcode::Stdux)] = &cl_stdux_handler;
 
+    // load / store floating single precision
+    table[to_underlying(PpcOpcode::Lfs)] = &cl_lfs_handler;
+    table[to_underlying(PpcOpcode::Lfsu)] = &cl_lfsu_handler;
+    table[to_underlying(PpcOpcode::Lfsx)] = &cl_lfsx_handler;
+    table[to_underlying(PpcOpcode::Lfsux)] = &cl_lfsux_handler;
+    table[to_underlying(PpcOpcode::Stfs)] = &cl_stfs_handler;
+    table[to_underlying(PpcOpcode::Stfsu)] = &cl_stfsu_handler;
+    table[to_underlying(PpcOpcode::Stfsx)] = &cl_stfsx_handler;
+    table[to_underlying(PpcOpcode::Stfsux)] = &cl_stfsux_handler;
+
+    // load / store floating double precision
+    table[to_underlying(PpcOpcode::Lfd)] = &cl_lfd_handler;
+    table[to_underlying(PpcOpcode::Lfdu)] = &cl_lfdu_handler;
+    table[to_underlying(PpcOpcode::Lfdx)] = &cl_lfdx_handler;
+    table[to_underlying(PpcOpcode::Lfdux)] = &cl_lfdux_handler;
+    table[to_underlying(PpcOpcode::Stfd)] = &cl_stfd_handler;
+    table[to_underlying(PpcOpcode::Stfdu)] = &cl_stfdu_handler;
+    table[to_underlying(PpcOpcode::Stfdx)] = &cl_stfdx_handler;
+    table[to_underlying(PpcOpcode::Stfdux)] = &cl_stfdux_handler;
+
     return table;
 }();

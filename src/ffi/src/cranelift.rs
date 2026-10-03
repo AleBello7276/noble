@@ -7,7 +7,7 @@ use std::ptr;
 use std::num::NonZeroU8;
 
 use cranelift_codegen::entity::EntityRef;
-use cranelift_codegen::ir::{condcodes::IntCC, types, AbiParam, Block, BlockArg, Endianness, FuncRef, GlobalValue, Inst, InstBuilder, MemFlags, MemFlagsData, SigRef, Signature, Type, Value};
+use cranelift_codegen::ir::{condcodes::{FloatCC, IntCC}, types, AbiParam, Block, BlockArg, Endianness, FuncRef, GlobalValue, Inst, InstBuilder, MemFlags, MemFlagsData, SigRef, Signature, Type, Value};
 use cranelift_codegen::isa::{self, OwnedTargetIsa};
 use cranelift_codegen::{settings, Context};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
@@ -732,6 +732,86 @@ macro_rules! typed_unary_ins {
 typed_unary_ins!(cl_ins_ireduce, ireduce);
 typed_unary_ins!(cl_ins_uextend, uextend);
 typed_unary_ins!(cl_ins_sextend, sextend);
+
+// reinterpret bits using the function local flags just as load and store do
+#[no_mangle]
+pub unsafe extern "C" fn cl_ins_bitcast(builder: *mut FunctionBuilder<'static>, value_type: u16, flags: u32, value: u32) -> u32 {
+    let Some(flags) = MemFlags::with_number(flags) else { error("invalid MemFlags"); return INVALID };
+    let builder = &mut *builder;
+    if !builder.func.dfg.mem_flags.is_valid(flags) { error("unknown MemFlags"); return INVALID }
+    let flags = builder.func.dfg.mem_flags[flags];
+    builder.ins().bitcast(ty(value_type), flags, Value::from_u32(value)).as_u32()
+}
+
+// copy the sign bit of right onto left without changing the other bits
+binary_ins!(cl_ins_fcopysign, fcopysign);
+// choose the smaller float and propagate nan with negative zero preferred over positive zero
+binary_ins!(cl_ins_fmin, fmin);
+// choose the larger float and propagate nan with positive zero preferred over negative zero
+binary_ins!(cl_ins_fmax, fmax);
+// compute the floating point square root
+unary_ins!(cl_ins_sqrt, sqrt);
+// flip the floating point sign bit without changing the other bits
+unary_ins!(cl_ins_fneg, fneg);
+// clear the floating point sign bit without changing the other bits
+unary_ins!(cl_ins_fabs, fabs);
+// round toward positive infinity and keep the floating point type
+unary_ins!(cl_ins_ceil, ceil);
+// round toward negative infinity and keep the floating point type
+unary_ins!(cl_ins_floor, floor);
+// round toward zero and keep the floating point type
+unary_ins!(cl_ins_trunc, trunc);
+// round to the nearest integral float with ties to even
+unary_ins!(cl_ins_nearest, nearest);
+// convert f64x2 to f32x4 with rounding to nearest ties to even and zero the upper two lanes
+unary_ins!(cl_ins_fvdemote, fvdemote);
+// convert the lower two lanes of f32x4 to f64x2 and discard the upper lanes
+unary_ins!(cl_ins_fvpromote_low, fvpromote_low);
+// convert a scalar float to a wider float type preserving its numerical value
+typed_unary_ins!(cl_ins_fpromote, fpromote);
+// convert a scalar float to a narrower float type with rounding to nearest ties to even
+typed_unary_ins!(cl_ins_fdemote, fdemote);
+// convert a scalar float to an unsigned integer toward zero and trap on nan or overflow
+typed_unary_ins!(cl_ins_fcvt_to_uint, fcvt_to_uint);
+// convert a scalar float to a signed integer toward zero and trap on nan or overflow
+typed_unary_ins!(cl_ins_fcvt_to_sint, fcvt_to_sint);
+// convert float lanes to unsigned integers toward zero with clamping and nan converted to zero
+typed_unary_ins!(cl_ins_fcvt_to_uint_sat, fcvt_to_uint_sat);
+// convert float lanes to signed integers toward zero with clamping and nan converted to zero
+typed_unary_ins!(cl_ins_fcvt_to_sint_sat, fcvt_to_sint_sat);
+// convert unsigned integer lanes to floats with rounding to nearest ties to even
+typed_unary_ins!(cl_ins_fcvt_from_uint, fcvt_from_uint);
+// convert signed integer lanes to floats with rounding to nearest ties to even
+typed_unary_ins!(cl_ins_fcvt_from_sint, fcvt_from_sint);
+
+// compute a fused multiply add with a single rounding
+#[no_mangle]
+pub unsafe extern "C" fn cl_ins_fma(builder: *mut FunctionBuilder<'static>, left: u32, right: u32, addend: u32) -> u32 {
+    (*builder).ins().fma(Value::from_u32(left), Value::from_u32(right), Value::from_u32(addend)).as_u32()
+}
+
+// decode every float condition explicitly without relying on the rust enum layout
+#[no_mangle]
+pub unsafe extern "C" fn cl_ins_fcmp(builder: *mut FunctionBuilder<'static>, condition: u32, left: u32, right: u32) -> u32 {
+    let condition = match condition {
+        0 => FloatCC::Ordered,
+        1 => FloatCC::Unordered,
+        2 => FloatCC::Equal,
+        3 => FloatCC::NotEqual,
+        4 => FloatCC::OrderedNotEqual,
+        5 => FloatCC::UnorderedOrEqual,
+        6 => FloatCC::LessThan,
+        7 => FloatCC::LessThanOrEqual,
+        8 => FloatCC::GreaterThan,
+        9 => FloatCC::GreaterThanOrEqual,
+        10 => FloatCC::UnorderedOrLessThan,
+        11 => FloatCC::UnorderedOrLessThanOrEqual,
+        12 => FloatCC::UnorderedOrGreaterThan,
+        13 => FloatCC::UnorderedOrGreaterThanOrEqual,
+        _ => { error("invalid FloatCC"); return INVALID }
+    };
+    (*builder).ins().fcmp(condition, Value::from_u32(left), Value::from_u32(right)).as_u32()
+}
 
 // expose both immediate extension modes without changing cranelift instruction semantics
 macro_rules! immediate_ins {

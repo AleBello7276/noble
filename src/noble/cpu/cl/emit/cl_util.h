@@ -284,6 +284,155 @@ inline void emit_store_indexed(EmitterContext& e_, InstructionInfo& info_) {
         e_.store_gpr(ra, ea);
 }
 
+/*
+    Floating point
+*/
+
+template <unsigned Bits>
+inline Value emit_fload_value(EmitterContext& e_, Value ea) {
+    static_assert(Bits == 32 || Bits == 64);
+
+    if constexpr (Bits == 32) {
+        // Load guest big-endian float as raw integer bits.
+        Value bits = e_.load_memory(ea, e_.i64(0), types::I32());
+        bits = e_.ins().bswap(bits);
+
+        // I32 bits -> F32.
+        const Value f32 = e_.ins().bitcast(types::F32(), MemFlags{}, bits);
+
+        // PPC FPR receives the single-precision value represented
+        // in the register's double-precision format.
+        return e_.ins().fpromote(types::F64(), f32);
+    } else {
+        Value bits = e_.load_memory(ea, e_.i64(0), types::I64());
+        bits = e_.ins().bswap(bits);
+
+        // I64 bits -> F64.
+        return e_.ins().bitcast(types::F64(), MemFlags{}, bits);
+    }
+}
+
+template <unsigned Bits, bool Update = false>
+inline void emit_fload(EmitterContext& e_, InstructionInfo& info_) {
+    static_assert(Bits == 32 || Bits == 64);
+
+    const auto ra = info_.mInst.field_ra();
+    const auto frd = info_.mInst.field_frd();
+
+    Value base;
+
+    if constexpr (Update) {
+        // Update forms require RA != 0.
+        base = e_.load_gpr(ra);
+    } else {
+        base = ra ? e_.load_gpr(ra) : e_.i64(0);
+    }
+
+    const auto d = info_.mInst.field_offset();
+    const Value ea = e_.ins().iadd_imm_s(base, sign_extend<16>(d));
+    const Value value = emit_fload_value<Bits>(e_, ea);
+    e_.store_fpr(frd, value);
+
+    if constexpr (Update)
+        e_.store_gpr(ra, ea);
+}
+template <unsigned Bits, bool Update = false>
+inline void emit_fload_indexed(EmitterContext& e_, InstructionInfo& info_) {
+    static_assert(Bits == 32 || Bits == 64);
+
+    const auto ra = info_.mInst.field_ra();
+    const auto rb = info_.mInst.field_rb();
+    const auto frd = info_.mInst.field_frd();
+
+    Value base;
+
+    if constexpr (Update) {
+        base = e_.load_gpr(ra);
+    } else {
+        base = ra ? e_.load_gpr(ra) : e_.i64(0);
+    }
+
+    const Value index = e_.load_gpr(rb);
+    const Value ea = e_.ins().iadd(base, index);
+    const Value value = emit_fload_value<Bits>(e_, ea);
+    e_.store_fpr(frd, value);
+
+    if constexpr (Update)
+        e_.store_gpr(ra, ea);
+}
+
+template <unsigned Bits>
+inline Value emit_fstore_value(EmitterContext& e_, Value value) {
+    static_assert(Bits == 32 || Bits == 64);
+
+    if constexpr (Bits == 32) {
+        // F64 -> rounded F32.
+        const Value f32 = e_.ins().fdemote(types::F32(), value);
+
+        // F32 -> raw I32 bits.
+        Value bits = e_.ins().bitcast(types::I32(), MemFlags{}, f32);
+
+        // Guest memory is big-endian.
+        bits = e_.ins().bswap(bits);
+        return bits;
+    } else {
+        // F64 -> raw I64 bits.
+        Value bits = e_.ins().bitcast(types::I64(), MemFlags{}, value);
+        bits = e_.ins().bswap(bits);
+
+        return bits;
+    }
+}
+
+template <unsigned Bits, bool Update = false>
+inline void emit_fstore(EmitterContext& e_, InstructionInfo& info_) {
+    static_assert(Bits == 32 || Bits == 64);
+
+    const auto ra = info_.mInst.field_ra();
+    const auto frs = info_.mInst.field_frs();
+
+    Value base;
+
+    if constexpr (Update) {
+        base = e_.load_gpr(ra);
+    } else {
+        base = ra ? e_.load_gpr(ra) : e_.i64(0);
+    }
+
+    const auto d = info_.mInst.field_offset();
+    const Value ea = e_.ins().iadd_imm_s(base, sign_extend<16>(d));
+    const Value value = emit_fstore_value<Bits>(e_, e_.load_fpr(frs));
+    e_.store_memory(ea, value);
+
+    if constexpr (Update)
+        e_.store_gpr(ra, ea);
+}
+
+template <unsigned Bits, bool Update = false>
+inline void emit_fstore_indexed(EmitterContext& e_, InstructionInfo& info_) {
+    static_assert(Bits == 32 || Bits == 64);
+
+    const auto ra = info_.mInst.field_ra();
+    const auto rb = info_.mInst.field_rb();
+    const auto frs = info_.mInst.field_frs();
+
+    Value base;
+
+    if constexpr (Update) {
+        base = e_.load_gpr(ra);
+    } else {
+        base = ra ? e_.load_gpr(ra) : e_.i64(0);
+    }
+
+    const Value index = e_.load_gpr(rb);
+    const Value ea = e_.ins().iadd(base, index);
+    const Value value = emit_fstore_value<Bits>(e_, e_.load_fpr(frs));
+    e_.store_memory(ea, value);
+
+    if constexpr (Update)
+        e_.store_gpr(ra, ea);
+}
+
 // from xenon
 constexpr uint64_t PPCMASK(uint64_t mb, uint64_t me) {
     const uint64_t mask = ~0ULL << (~(me - mb) & 63);

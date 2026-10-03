@@ -73,6 +73,24 @@ typedef enum ClIntCC {
     CL_INTCC_UNSIGNED_LESS_THAN_OR_EQUAL = 9
 } ClIntCC;
 
+// ordered comparisons exclude nan and unordered comparisons include nan
+typedef enum ClFloatCC {
+    CL_FLOATCC_ORDERED = 0,
+    CL_FLOATCC_UNORDERED = 1,
+    CL_FLOATCC_EQUAL = 2,
+    CL_FLOATCC_NOT_EQUAL = 3,
+    CL_FLOATCC_ORDERED_NOT_EQUAL = 4,
+    CL_FLOATCC_UNORDERED_OR_EQUAL = 5,
+    CL_FLOATCC_LESS_THAN = 6,
+    CL_FLOATCC_LESS_THAN_OR_EQUAL = 7,
+    CL_FLOATCC_GREATER_THAN = 8,
+    CL_FLOATCC_GREATER_THAN_OR_EQUAL = 9,
+    CL_FLOATCC_UNORDERED_OR_LESS_THAN = 10,
+    CL_FLOATCC_UNORDERED_OR_LESS_THAN_OR_EQUAL = 11,
+    CL_FLOATCC_UNORDERED_OR_GREATER_THAN = 12,
+    CL_FLOATCC_UNORDERED_OR_GREATER_THAN_OR_EQUAL = 13
+} ClFloatCC;
+
 typedef enum ClEndianness { CL_ENDIANNESS_LITTLE = 0, CL_ENDIANNESS_BIG = 1 } ClEndianness;
 
 typedef enum ClCallConv {
@@ -241,6 +259,55 @@ ClValue cl_ins_fadd(ClFunctionBuilder* builder, ClValue left, ClValue right);
 ClValue cl_ins_fsub(ClFunctionBuilder* builder, ClValue left, ClValue right);
 ClValue cl_ins_fmul(ClFunctionBuilder* builder, ClValue left, ClValue right);
 ClValue cl_ins_fdiv(ClFunctionBuilder* builder, ClValue left, ClValue right);
+// reinterpret equal-sized types without numerical conversion using flags from this function
+// specify endianness when vector lane counts differ and use memflags_new for scalar casts
+ClValue cl_ins_bitcast(ClFunctionBuilder* builder, ClType type, ClMemFlags flags, ClValue value);
+// copy the sign bit of right onto left without changing the other bits
+ClValue cl_ins_fcopysign(ClFunctionBuilder* builder, ClValue left, ClValue right);
+// choose the smaller float and propagate nan with negative zero preferred over positive zero
+ClValue cl_ins_fmin(ClFunctionBuilder* builder, ClValue left, ClValue right);
+// choose the larger float and propagate nan with positive zero preferred over negative zero
+ClValue cl_ins_fmax(ClFunctionBuilder* builder, ClValue left, ClValue right);
+// compute the floating point square root
+ClValue cl_ins_sqrt(ClFunctionBuilder* builder, ClValue value);
+// flip the floating point sign bit without changing the other bits
+ClValue cl_ins_fneg(ClFunctionBuilder* builder, ClValue value);
+// clear the floating point sign bit without changing the other bits
+ClValue cl_ins_fabs(ClFunctionBuilder* builder, ClValue value);
+// round toward positive infinity and keep the floating point type
+ClValue cl_ins_ceil(ClFunctionBuilder* builder, ClValue value);
+// round toward negative infinity and keep the floating point type
+ClValue cl_ins_floor(ClFunctionBuilder* builder, ClValue value);
+// round toward zero and keep the floating point type
+ClValue cl_ins_trunc(ClFunctionBuilder* builder, ClValue value);
+// round to the nearest integral float with ties to even
+ClValue cl_ins_nearest(ClFunctionBuilder* builder, ClValue value);
+// convert f64x2 to f32x4 with rounding to nearest ties to even and zero the upper two lanes
+ClValue cl_ins_fvdemote(ClFunctionBuilder* builder, ClValue value);
+// convert the lower two lanes of f32x4 to f64x2 and discard the upper lanes
+ClValue cl_ins_fvpromote_low(ClFunctionBuilder* builder, ClValue value);
+// convert a scalar float to a wider float type preserving its numerical value
+ClValue cl_ins_fpromote(ClFunctionBuilder* builder, ClType type, ClValue value);
+// convert a scalar float to a narrower float type with rounding to nearest ties to even
+ClValue cl_ins_fdemote(ClFunctionBuilder* builder, ClType type, ClValue value);
+// convert a scalar float to an unsigned integer toward zero and trap on nan or overflow
+ClValue cl_ins_fcvt_to_uint(ClFunctionBuilder* builder, ClType type, ClValue value);
+// convert a scalar float to a signed integer toward zero and trap on nan or overflow
+ClValue cl_ins_fcvt_to_sint(ClFunctionBuilder* builder, ClType type, ClValue value);
+// convert float lanes to unsigned integers toward zero with clamping and nan converted to zero
+ClValue cl_ins_fcvt_to_uint_sat(ClFunctionBuilder* builder, ClType type, ClValue value);
+// convert float lanes to signed integers toward zero with clamping and nan converted to zero
+ClValue cl_ins_fcvt_to_sint_sat(ClFunctionBuilder* builder, ClType type, ClValue value);
+// convert unsigned integer lanes to floats with rounding to nearest ties to even
+ClValue cl_ins_fcvt_from_uint(ClFunctionBuilder* builder, ClType type, ClValue value);
+// convert signed integer lanes to floats with rounding to nearest ties to even
+ClValue cl_ins_fcvt_from_sint(ClFunctionBuilder* builder, ClType type, ClValue value);
+// compute left times right plus addend with a single rounding and matching float types
+ClValue cl_ins_fma(ClFunctionBuilder* builder, ClValue left, ClValue right, ClValue addend);
+// compare matching float types with an i8 scalar result or a lane mask for vectors
+// not_equal includes nan while ordered_not_equal excludes nan
+ClValue cl_ins_fcmp(ClFunctionBuilder* builder, uint32_t condition, ClValue left, ClValue right);
+
 ClValue cl_ins_ineg(ClFunctionBuilder* builder, ClValue value);
 ClValue cl_ins_bnot(ClFunctionBuilder* builder, ClValue value);
 // count leading zero bits and return the input bit width for zero
