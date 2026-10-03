@@ -185,6 +185,12 @@ public:
     // release exported storage after guest execution has stopped
     void ClearVariables();
 
+    // allocate zeroed guest storage referenced by an exported pointer and retain it until shutdown
+    GuestAddress AllocateVariableStorage(size_t size);
+
+    // get the backing address of a registered variable for host services that update it directly
+    GuestAddress VariableAddress(XboxLibrary library, std::string_view name) const;
+
     // allocate an exported array or structure from bytes already encoded for the guest
     GuestAddress DefineVariableBytes(XboxLibrary library, std::string_view name,
                                      std::span<const std::byte> bytes);
@@ -254,6 +260,7 @@ private:
     mutable std::shared_mutex mutex_;
     std::unordered_map<uint64_t, EntryPoint> entries_;
     std::unordered_map<uint64_t, Variable> variables_;
+    std::vector<GuestAddress> variableStorage_;
 };
 
 }  // namespace hle

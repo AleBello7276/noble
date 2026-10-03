@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -8,6 +9,11 @@
 #include "KThread.h"
 #include "hle/Shims.h"
 #include <mutex>
+#include <thread>
+
+namespace hle::krnl {
+struct TimeStampBundle;
+}
 
 class Memory;
 class Scheduler;
@@ -39,7 +45,7 @@ public:
     KProcess* CreateGuestProcess(const ProcessCreateInfo& info);
 
     // publish the executable guest loader record and retain its original xex header
-    bool SetExecutableModule(const XLoader::IImage& image);
+    bool SetExecutableModule(const XLoader::IImage& image, std::string_view imagePath = {});
 
     KThread* CreateThread(KProcess* process, const ThreadCreateInfo& info);
     void StartThread(KThread* thread);
@@ -66,6 +72,9 @@ public:
     bool SetTLSValue(KThread& thread, uint32_t index, uint32_t value);
 
 private:
+    // refresh the shared timestamp record from the kernel clock origin
+    void UpdateTimeStampBundle();
+
     void InitializeThreadContext(KThread& thread, const ThreadCreateInfo& info);
 
     bool AllocateThreadStack(KThread& thread, uint32_t size);
@@ -82,4 +91,10 @@ private:
     uint32_t next_thread_id_ = 1;
 
     std::vector<std::unique_ptr<KProcess>> processes_;
+
+    std::chrono::steady_clock::time_point clockStart_;
+    uint64_t systemTimeStart_ = 0;
+    hle::krnl::TimeStampBundle* timeStampBundle_ = nullptr;
+    // destroy the timer before the guest storage and other kernel members
+    std::jthread timeStampTimer_;
 };

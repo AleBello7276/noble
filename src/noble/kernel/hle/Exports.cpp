@@ -1,5 +1,6 @@
 #include "Exports.h"
 
+#include "krnl/Rtl.h"
 #include "krnl/Threading.h"
 #include "krnl/Variables.h"
 #include <array>
@@ -8,7 +9,7 @@
 namespace hle {
 
 void RegisterExports(Registry& registry) {
-    const std::array groups{krnl::ThreadingExports()};
+    const std::array groups{krnl::ThreadingExports(), krnl::RtlExports()};
 
     std::unordered_set<uint64_t> registered;
 

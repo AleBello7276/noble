@@ -54,7 +54,7 @@ bool Emulator::LoadTitle(std::string path) {
         return false;
     }
 
-    if (!mKernel_.SetExecutableModule(image)) {
+    if (!mKernel_.SetExecutableModule(image, mStartModule.mPath)) {
         mKernel_.Shutdown();
         mTitleProcess_ = nullptr;
         mMemory_.FreeVirtual(mImageAddress_);

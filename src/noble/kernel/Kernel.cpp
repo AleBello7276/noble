@@ -6,6 +6,7 @@
 #include "cpu/Scheduler.h"
 #include "emulator/Memory.h"
 #include "hle/Exports.h"
+#include "hle/krnl/Variables.h"
 #include <algorithm>
 #include <cstring>
 
@@ -13,15 +14,47 @@ Kernel::Kernel(Memory& memory, Scheduler& scheduler)
     : memory_(memory), scheduler_(scheduler), imports_(*this, memory) {}
 
 bool Kernel::Initialize() {
+    if (timeStampTimer_.joinable())
+        return false;
+
     next_process_id_ = 1;
     next_thread_id_ = 1;
 
-    hle::RegisterExports(imports_);
+    try {
+        hle::RegisterExports(imports_);
+        const auto timestampAddress = imports_.VariableAddress(XboxLibrary::XboxKrnl, "KeTimeStampBundle");
+        timeStampBundle_ = static_cast<hle::krnl::TimeStampBundle*>(
+            memory_.Translate(timestampAddress, sizeof(hle::krnl::TimeStampBundle)));
+        clockStart_ = std::chrono::steady_clock::now();
+        using ClockUnits = std::chrono::duration<int64_t, std::ratio<1, 10000000>>;
+        constexpr int64_t windowsEpochOffset = 116444736000000000LL;
+        systemTimeStart_
+            = std::chrono::duration_cast<ClockUnits>(std::chrono::system_clock::now().time_since_epoch())
+                  .count()
+              + windowsEpochOffset;
+        UpdateTimeStampBundle();
+        timeStampTimer_ = std::jthread([this](std::stop_token stop) {
+            while (!stop.stop_requested()) {
+                UpdateTimeStampBundle();
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        });
+    } catch (const std::exception& error) {
+        LOG_ERROR("Unable to initialize kernel exports: {}", error.what());
+        timeStampBundle_ = nullptr;
+        imports_.ClearVariables();
+        return false;
+    }
 
     return true;
 }
 
 void Kernel::Shutdown() {
+    timeStampTimer_.request_stop();
+    if (timeStampTimer_.joinable())
+        timeStampTimer_.join();
+    timeStampBundle_ = nullptr;
+
     for (auto& process : processes_)
         for (auto& thread : process->threads_)
             if (thread->mStackLimit)
@@ -40,7 +73,14 @@ void Kernel::Shutdown() {
     executableHeader_ = 0;
 }
 
-bool Kernel::SetExecutableModule(const XLoader::IImage& image) {
+void Kernel::UpdateTimeStampBundle() {
+    using ClockUnits = std::chrono::duration<uint64_t, std::ratio<1, 10000000>>;
+    const uint64_t elapsed
+        = std::chrono::duration_cast<ClockUnits>(std::chrono::steady_clock::now() - clockStart_).count();
+    hle::krnl::UpdateTimeStampBundle(*timeStampBundle_, elapsed, systemTimeStart_ + elapsed);
+}
+
+bool Kernel::SetExecutableModule(const XLoader::IImage& image, std::string_view imagePath) {
     if (executableModule_ || !image.getMemorySize() || image.getMemorySize() > UINT32_MAX)
         return false;
 
@@ -68,6 +108,8 @@ bool Kernel::SetExecutableModule(const XLoader::IImage& image) {
         record.xexHeaderBase = byte_swap(headerAddress);
         std::memcpy(memory_.Translate(recordAddress, sizeof(record)), &record, sizeof(record));
 
+        if (!imagePath.empty())
+            hle::krnl::UpdateCommandLine(imports_, imagePath);
         imports_.UpdateVariable<uint32_t>(XboxLibrary::XboxKrnl, "XexExecutableModuleHandle", recordAddress);
     } catch (const std::exception& error) {
         LOG_ERROR("Unable to publish executable module: {}", error.what());

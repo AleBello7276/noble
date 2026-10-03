@@ -2,6 +2,32 @@
 
 #include "cl_util.h"
 
+CLHandler(add) {
+    const Value lhs = e_.load_gpr(info_.mInst.field_ra());
+    const Value rhs = e_.load_gpr(info_.mInst.field_rb());
+    const Value result = e_.ins().iadd(lhs, rhs);
+
+    if (info_.mInst.field_oe()) {
+        const Value resultWord = e_.ins().ireduce(types::I32(), result);
+        const Value lhsWord = e_.ins().ireduce(types::I32(), lhs);
+        const Value rhsWord = e_.ins().ireduce(types::I32(), rhs);
+        // signed word overflow occurs when both operands have a different sign from the result
+        const Value signChanges
+            = e_.ins().band(e_.ins().bxor(lhsWord, resultWord), e_.ins().bxor(rhsWord, resultWord));
+        const Value overflow = e_.ins().icmp(IntCC::CL_INTCC_SIGNED_LESS_THAN, signChanges, e_.i32(0));
+        constexpr int64_t ovMask = int64_t(1) << 30;
+        const Value xer = e_.load_spr(eSPR::XER);
+        const Value ov = e_.ins().select(overflow, e_.i64(ovMask), e_.i64(0));
+        const Value updatedXer = e_.ins().bor(e_.ins().bor(e_.ins().band(xer, e_.i64(~ovMask)), ov),
+                                              e_.ins().ishl(ov, e_.i64(1)));
+        e_.store_spr(eSPR::XER, updatedXer);
+    }
+
+    e_.store_gpr(info_.mInst.field_rd(), result);
+    if (info_.mInst.field_rc())
+        e_.record_cr(0, result);
+}
+
 CLHandler(addis) {
     const auto rt = info_.mInst.field_rd();
     const auto ra = info_.mInst.field_ra();
@@ -31,6 +57,64 @@ CLHandler(addi) {
         toStore = e_.ins().iadd(e_.load_gpr(ra), immediate);
 
     e_.store_gpr(rt, toStore);
+}
+
+CLHandler(addic) {
+    const auto rt = info_.mInst.field_rd();
+    const auto ra = info_.mInst.field_ra();
+    const Value source = e_.load_gpr(ra);
+    const Value immediate = e_.i64(sign_extend<16>(info_.mInst.field_uimm()));
+    const Value result = e_.ins().iadd(source, immediate);
+
+    // carry reflects the low word addition in the current guest execution mode
+    const Value carry
+        = e_.ins().icmp(IntCC::CL_INTCC_UNSIGNED_LESS_THAN, e_.ins().ireduce(types::I32(), result),
+                        e_.ins().ireduce(types::I32(), source));
+    constexpr int64_t caMask = int64_t(1) << 29;
+    const Value xer = e_.load_spr(eSPR::XER);
+    const Value ca = e_.ins().select(carry, e_.i64(caMask), e_.i64(0));
+    e_.store_spr(eSPR::XER, e_.ins().bor(e_.ins().band(xer, e_.i64(~caMask)), ca));
+    e_.store_gpr(rt, result);
+
+    if (info_.mInst.op == PpcOpcode::Addic_)
+        e_.record_cr(0, result);
+}
+
+CLHandler(subfe) {
+    const auto rt = info_.mInst.field_rd();
+    const Value lhs = e_.load_gpr(info_.mInst.field_ra());
+    const Value rhs = e_.load_gpr(info_.mInst.field_rb());
+    const Value xer = e_.load_spr(eSPR::XER);
+    const Value carryIn = e_.ins().band(e_.ins().ushr(xer, e_.i64(29)), e_.i64(1));
+    const Value result = e_.ins().iadd(e_.ins().iadd(e_.ins().bnot(lhs), rhs), carryIn);
+
+    // carry is the absence of a borrow from the low word including the incoming carry
+    const Value lhsWord = e_.ins().ireduce(types::I32(), lhs);
+    const Value rhsWord = e_.ins().ireduce(types::I32(), rhs);
+    const Value hasCarry = e_.ins().icmp(IntCC::CL_INTCC_NOT_EQUAL, carryIn, e_.i64(0));
+    const Value carry = e_.ins().select(
+        hasCarry, e_.ins().icmp(IntCC::CL_INTCC_UNSIGNED_GREATER_THAN_OR_EQUAL, rhsWord, lhsWord),
+        e_.ins().icmp(IntCC::CL_INTCC_UNSIGNED_GREATER_THAN, rhsWord, lhsWord));
+    constexpr int64_t caMask = int64_t(1) << 29;
+    Value updatedXer = e_.ins().bor(e_.ins().band(xer, e_.i64(~caMask)),
+                                    e_.ins().select(carry, e_.i64(caMask), e_.i64(0)));
+
+    if (info_.mInst.field_oe()) {
+        const Value resultWord = e_.ins().ireduce(types::I32(), result);
+        const Value signChanges
+            = e_.ins().band(e_.ins().bxor(rhsWord, lhsWord), e_.ins().bxor(rhsWord, resultWord));
+        const Value overflow = e_.ins().icmp(IntCC::CL_INTCC_SIGNED_LESS_THAN, signChanges, e_.i32(0));
+        constexpr int64_t ovMask = int64_t(1) << 30;
+        const Value ov = e_.ins().select(overflow, e_.i64(ovMask), e_.i64(0));
+        // ov reflects this operation and so remains set after any signed overflow
+        updatedXer = e_.ins().bor(e_.ins().bor(e_.ins().band(updatedXer, e_.i64(~ovMask)), ov),
+                                  e_.ins().ishl(ov, e_.i64(1)));
+    }
+
+    e_.store_spr(eSPR::XER, updatedXer);
+    e_.store_gpr(rt, result);
+    if (info_.mInst.field_rc())
+        e_.record_cr(0, result);
 }
 
 CLHandler(or_) {

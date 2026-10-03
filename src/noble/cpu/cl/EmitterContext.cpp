@@ -135,9 +135,18 @@ cranelift::Value EmitterContext::store_spr(size_t struct_offset, cranelift::Valu
 cranelift::Value EmitterContext::load_spr(eSPR type) {
     switch (type) {
     case eSPR::XER: {
-        auto value = load_spr(offsetof(SPRState, XER));
-        auto trunc = builder.ins().ireduce(cranelift::types::I32(), value);
-        return trunc;
+        constexpr size_t offset = offsetof(SPRState, XER);
+#if NOBLE_CRANELIFT_REGISTER_CACHE
+        auto& cached = sprCache_[offset];
+        if (cached.value != cranelift::INVALID_ID)
+            return zext(cranelift::types::I64(), cached.value);
+#endif
+        const auto value
+            = ins().load(cranelift::types::I32(), builder.memflags_new(), vCpuState, SPROffset(offset));
+#if NOBLE_CRANELIFT_REGISTER_CACHE
+        cached.value = value;
+#endif
+        return zext(cranelift::types::I64(), value);
     }
     case eSPR::LR:
         return load_spr(offsetof(SPRState, LR));

@@ -56,7 +56,7 @@ union GPR {
     int16_t s16;
     uint32_t u32;
     int32_t s32;
-    uint64_t u64;
+    uint64_t u64 = 0;
     int64_t s64;
 };
 
@@ -120,7 +120,8 @@ enum eSPR : uint16_t {
 
 union uXER {
     uint32_t hexValue;
-#ifdef __LITTLE_ENDIAN__
+#if defined(__LITTLE_ENDIAN__) || defined(_WIN32)                                                            \
+    || (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
     struct {
         uint32_t ByteCount : 7;
         uint32_t R0 : 22;

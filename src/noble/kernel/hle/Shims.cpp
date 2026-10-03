@@ -90,6 +90,33 @@ void Registry::ClearVariables() {
     for (const auto& [key, variable] : variables_)
         memory_.FreeVirtual(variable.address);
     variables_.clear();
+    for (const auto address : variableStorage_)
+        memory_.FreeVirtual(address);
+    variableStorage_.clear();
+}
+
+GuestAddress Registry::AllocateVariableStorage(size_t size) {
+    std::unique_lock lock(mutex_);
+    const GuestAddress address = memory_.AllocateVirtual(size);
+    if (!address)
+        throw std::runtime_error("unable to allocate hle variable backing storage");
+
+    try {
+        variableStorage_.push_back(address);
+    } catch (...) {
+        memory_.FreeVirtual(address);
+        throw;
+    }
+    return address;
+}
+
+GuestAddress Registry::VariableAddress(XboxLibrary library, std::string_view name) const {
+    const auto& definition = VariableDefinition(library, name);
+    std::shared_lock lock(mutex_);
+    const auto it = variables_.find(Key(library, definition.ordinal));
+    if (it == variables_.end())
+        throw std::invalid_argument("missing hle variable export");
+    return it->second.address;
 }
 
 void* Context::Translate(GuestAddress address, size_t size) const {
