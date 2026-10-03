@@ -3,29 +3,53 @@
 #include "cl_util.h"
 
 CLHandler(add) {
-    const Value lhs = e_.load_gpr(info_.mInst.field_ra());
-    const Value rhs = e_.load_gpr(info_.mInst.field_rb());
-    const Value result = e_.ins().iadd(lhs, rhs);
+    const auto oe = info_.mInst.field_oe();
+    const auto rc = info_.mInst.field_rc();
+    const auto rd = info_.mInst.field_rd();
+    const auto ra = info_.mInst.field_ra();
+    const auto rb = info_.mInst.field_rb();
 
-    if (info_.mInst.field_oe()) {
-        const Value resultWord = e_.ins().ireduce(types::I32(), result);
-        const Value lhsWord = e_.ins().ireduce(types::I32(), lhs);
-        const Value rhsWord = e_.ins().ireduce(types::I32(), rhs);
-        // signed word overflow occurs when both operands have a different sign from the result
-        const Value signChanges
-            = e_.ins().band(e_.ins().bxor(lhsWord, resultWord), e_.ins().bxor(rhsWord, resultWord));
-        const Value overflow = e_.ins().icmp(IntCC::CL_INTCC_SIGNED_LESS_THAN, signChanges, e_.i32(0));
-        constexpr int64_t ovMask = int64_t(1) << 30;
-        const Value xer = e_.load_spr(eSPR::XER);
-        const Value ov = e_.ins().select(overflow, e_.i64(ovMask), e_.i64(0));
-        const Value updatedXer = e_.ins().bor(e_.ins().bor(e_.ins().band(xer, e_.i64(~ovMask)), ov),
-                                              e_.ins().ishl(ov, e_.i64(1)));
-        e_.store_spr(eSPR::XER, updatedXer);
+    const Value res = e_.ins().iadd(e_.load_gpr(ra), e_.load_gpr(rb));
+    e_.store_gpr(rd, res);
+
+    if (oe) {
+        LOG_FATAL("add instruction OE bit not implemented.");
+        assert(false);
     }
 
-    e_.store_gpr(info_.mInst.field_rd(), result);
-    if (info_.mInst.field_rc())
-        e_.record_cr(0, result);
+    if (res)
+        e_.record_cr(0, res);
+}
+
+// TODO: the add with carry can be expressed with an (x86) adc, but as writing this,
+// cranelift doesnt lower uadd_overflow_cin(), ARM also doesn't lower it
+CLHandler(addze) {
+    const auto oe = info_.mInst.field_oe();
+    const auto rc = info_.mInst.field_rc();
+    const auto rd = info_.mInst.field_rd();
+    const auto ra = info_.mInst.field_ra();
+
+    const Value source = e_.load_gpr(ra);
+    const Value ca_in = e_.load_ca();
+
+    const Value ca64 = e_.ins().uextend(types::I64(), ca_in);
+    const Value res = e_.ins().iadd(source, ca64);
+
+    e_.store_gpr(rd, res);
+
+    if (oe) {
+        LOG_FATAL("addze OE bit not implemented.");
+        assert(false);
+    } else {
+        const Value source32 = e_.ins().ireduce(types::I32(), source);
+        const Value ca32 = e_.ins().uextend(types::I32(), ca_in);
+
+        const auto [unused, ca_out] = e_.ins().uadd_overflow(source32, ca32);
+        e_.store_ca(ca_out);
+    }
+
+    if (rc)
+        e_.record_cr(0, res);
 }
 
 CLHandler(addis) {
@@ -33,13 +57,12 @@ CLHandler(addis) {
     const auto ra = info_.mInst.field_ra();
     const auto uimm = info_.mInst.field_uimm();
 
-    const auto shifted = sign_extend<16>(uimm) << 16;
-    const Value immediate = e_.i64(shifted);
-    Value toStore = immediate;
+    const Value immediate = sign_extend<16>(uimm) << 16;
+    Value toStore = e_.i64(immediate);
 
     // if 0 it's LI so it skips this
     if (ra != 0)
-        toStore = e_.ins().iadd(e_.load_gpr(ra), immediate);
+        toStore = e_.ins().iadd_imm_s(e_.load_gpr(ra), immediate);
 
     e_.store_gpr(rt, toStore);
 }
@@ -47,74 +70,118 @@ CLHandler(addis) {
 CLHandler(addi) {
     const auto rt = info_.mInst.field_rd();
     const auto ra = info_.mInst.field_ra();
-    const auto uimm = info_.mInst.field_uimm();
+    const auto simm = info_.mInst.field_simm();
 
-    const Value immediate = e_.i64(sign_extend<16>(uimm));
-    Value toStore = immediate;
+    const Value immediate = sign_extend<16>(simm);
+    Value toStore = e_.i64(immediate);
 
     // if 0 it's LI so it skips this
     if (ra != 0)
-        toStore = e_.ins().iadd(e_.load_gpr(ra), immediate);
+        toStore = e_.ins().iadd_imm_s(e_.load_gpr(ra), immediate);
 
     e_.store_gpr(rt, toStore);
 }
 
 CLHandler(addic) {
-    const auto rt = info_.mInst.field_rd();
+    const auto rd = info_.mInst.field_rd();
     const auto ra = info_.mInst.field_ra();
-    const Value source = e_.load_gpr(ra);
-    const Value immediate = e_.i64(sign_extend<16>(info_.mInst.field_uimm()));
-    const Value result = e_.ins().iadd(source, immediate);
+    const auto simm = info_.mInst.field_simm();
 
-    // carry reflects the low word addition in the current guest execution mode
-    const Value carry
-        = e_.ins().icmp(IntCC::CL_INTCC_UNSIGNED_LESS_THAN, e_.ins().ireduce(types::I32(), result),
-                        e_.ins().ireduce(types::I32(), source));
-    constexpr int64_t caMask = int64_t(1) << 29;
-    const Value xer = e_.load_spr(eSPR::XER);
-    const Value ca = e_.ins().select(carry, e_.i64(caMask), e_.i64(0));
-    e_.store_spr(eSPR::XER, e_.ins().bor(e_.ins().band(xer, e_.i64(~caMask)), ca));
-    e_.store_gpr(rt, result);
+    const Value source = e_.load_gpr(ra);
+    const auto immediate = sign_extend<16>(simm);
+
+    const Value res = e_.ins().iadd_imm_s(source, immediate);
+    e_.store_gpr(rd, res);
+
+    e_.store_ca(add_did_carry_imm32(e_, source, static_cast<uint32_t>(immediate)));
 
     if (info_.mInst.op == PpcOpcode::Addic_)
-        e_.record_cr(0, result);
+        e_.record_cr(0, res);
+}
+
+CLHandler(subfic) {
+    const auto rd = info_.mInst.field_rd();
+    const auto ra = info_.mInst.field_ra();
+    const auto simm = info_.mInst.field_simm();
+
+    const Value raV = e_.load_gpr(ra);
+    const auto immediate = sign_extend<16>(simm);
+    const Value res = e_.ins().isub(e_.i64(immediate), raV);
+    e_.store_gpr(rd, res);
+
+    e_.store_ca(sub_did_carry_imm32(e_, static_cast<uint32_t>(immediate), raV));
+}
+
+CLHandler(subf) {
+    const auto oe = info_.mInst.field_oe();
+    const auto rc = info_.mInst.field_rc();
+    const auto rd = info_.mInst.field_rd();
+    const auto ra = info_.mInst.field_ra();
+    const auto rb = info_.mInst.field_rb();
+
+    const Value res = e_.ins().isub(e_.load_gpr(rb), e_.load_gpr(ra));
+    e_.store_gpr(rd, res);
+
+    if (oe) {
+        LOG_FATAL("addze OE bit not implemented.");
+        assert(false);
+    }
+
+    if (rc)
+        e_.record_cr(0, res);
 }
 
 CLHandler(subfe) {
-    const auto rt = info_.mInst.field_rd();
-    const Value lhs = e_.load_gpr(info_.mInst.field_ra());
-    const Value rhs = e_.load_gpr(info_.mInst.field_rb());
-    const Value xer = e_.load_spr(eSPR::XER);
-    const Value carryIn = e_.ins().band(e_.ins().ushr(xer, e_.i64(29)), e_.i64(1));
-    const Value result = e_.ins().iadd(e_.ins().iadd(e_.ins().bnot(lhs), rhs), carryIn);
+    const auto oe = info_.mInst.field_oe();
+    const auto rc = info_.mInst.field_rc();
+    const auto rd = info_.mInst.field_rd();
+    const auto ra = info_.mInst.field_ra();
+    const auto rb = info_.mInst.field_rb();
 
-    // carry is the absence of a borrow from the low word including the incoming carry
-    const Value lhsWord = e_.ins().ireduce(types::I32(), lhs);
-    const Value rhsWord = e_.ins().ireduce(types::I32(), rhs);
-    const Value hasCarry = e_.ins().icmp(IntCC::CL_INTCC_NOT_EQUAL, carryIn, e_.i64(0));
-    const Value carry = e_.ins().select(
-        hasCarry, e_.ins().icmp(IntCC::CL_INTCC_UNSIGNED_GREATER_THAN_OR_EQUAL, rhsWord, lhsWord),
-        e_.ins().icmp(IntCC::CL_INTCC_UNSIGNED_GREATER_THAN, rhsWord, lhsWord));
-    constexpr int64_t caMask = int64_t(1) << 29;
-    Value updatedXer = e_.ins().bor(e_.ins().band(xer, e_.i64(~caMask)),
-                                    e_.ins().select(carry, e_.i64(caMask), e_.i64(0)));
+    const Value raV = e_.load_gpr(ra);
+    const Value rbV = e_.load_gpr(rb);
+    const Value ca_in = e_.load_ca();
 
-    if (info_.mInst.field_oe()) {
-        const Value resultWord = e_.ins().ireduce(types::I32(), result);
-        const Value signChanges
-            = e_.ins().band(e_.ins().bxor(rhsWord, lhsWord), e_.ins().bxor(rhsWord, resultWord));
-        const Value overflow = e_.ins().icmp(IntCC::CL_INTCC_SIGNED_LESS_THAN, signChanges, e_.i32(0));
-        constexpr int64_t ovMask = int64_t(1) << 30;
-        const Value ov = e_.ins().select(overflow, e_.i64(ovMask), e_.i64(0));
-        // ov reflects this operation and so remains set after any signed overflow
-        updatedXer = e_.ins().bor(e_.ins().bor(e_.ins().band(updatedXer, e_.i64(~ovMask)), ov),
-                                  e_.ins().ishl(ov, e_.i64(1)));
+    // RT <- ~RA + RB + CA
+    const Value not_ra = e_.ins().bnot(raV);
+
+    const Value tmp = e_.ins().iadd(not_ra, rbV);
+    const Value res = e_.ins().iadd(tmp, e_.ins().uextend(types::I64(), ca_in));
+
+    e_.store_gpr(rd, res);
+
+    if (oe) {
+        LOG_FATAL("subfe OE bit not implemented.");
+        assert(false);
+    } else {
+        e_.store_ca(sub_with_carry_did_carry32(e_, raV, rbV, ca_in));
     }
 
-    e_.store_spr(eSPR::XER, updatedXer);
-    e_.store_gpr(rt, result);
-    if (info_.mInst.field_rc())
-        e_.record_cr(0, result);
+    if (rc)
+        e_.record_cr(0, res);
+}
+
+CLHandler(and_) {
+    const auto rs = info_.mInst.field_rs();
+    const auto ra = info_.mInst.field_ra();
+    const auto rb = info_.mInst.field_rb();
+    const auto rc = info_.mInst.field_rc();
+
+    const Value res = e_.ins().band(e_.load_gpr(rs), e_.load_gpr(rb));
+    e_.store_gpr(ra, res);
+
+    if (rc)
+        e_.record_cr(0, res);
+}
+
+CLHandler(andi) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rb = info_.mInst.field_rb();
+    const auto uimm = info_.mInst.field_uimm();
+
+    const Value res = e_.ins().band_imm_u(e_.load_gpr(rb), zero_extend<16>(uimm));
+    e_.store_gpr(ra, res);
+    e_.record_cr(0, res);
 }
 
 CLHandler(or_) {
@@ -167,6 +234,16 @@ CLHandler(ori) {
     e_.store_gpr(ra, ored);
 }
 
+CLHandler(oris) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
+    const auto uimm = info_.mInst.field_uimm();
+
+    const Value immediate = zero_extend<16>(uimm) << 16;
+    Value ored = e_.ins().bor_imm_u(e_.load_gpr(rs), immediate);
+    e_.store_gpr(ra, ored);
+}
+
 CLHandler(cmpi) {
     const auto l = info_.mInst.field_l();
     const auto ra = info_.mInst.field_ra();
@@ -205,6 +282,26 @@ CLHandler(cmpli) {
     }
 
     e_.record_cr<false>(crfd, lhs, rhs);
+}
+
+CLHandler(cmp) {
+    const auto l = info_.mInst.field_l();
+    const auto ra = info_.mInst.field_ra();
+    const auto rb = info_.mInst.field_rb();
+    const auto crfd = info_.mInst.field_crfd();
+
+    Value lhs;
+    Value rhs;
+
+    if (l) {
+        lhs = e_.load_gpr(ra);
+        rhs = e_.load_gpr(rb);
+    } else {
+        lhs = e_.ins().ireduce(types::I32(), e_.load_gpr(ra));
+        rhs = e_.ins().ireduce(types::I32(), e_.load_gpr(rb));
+    }
+
+    e_.record_cr(crfd, lhs, rhs);
 }
 
 CLHandler(cmpl) {
@@ -252,6 +349,92 @@ CLHandler(cntlzw) {
         e_.record_cr(0, ext);
 }
 
+CLHandler(slw) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
+    const auto rb = info_.mInst.field_rb();
+    const auto rc = info_.mInst.field_rc();
+
+    const Value word = e_.ins().ireduce(types::I32(), e_.load_gpr(rs));
+    const Value count = e_.ins().ireduce(types::I32(), e_.load_gpr(rb));
+
+    // cranelift automatically uses count & 31 for an I32 shift.
+    const Value shifted = e_.ins().ishl(word, count);
+
+    const Value out_of_range = e_.ins().band_imm_u(count, 32);
+    const Value in_range = e_.ins().icmp_imm_u(IntCC::CL_INTCC_EQUAL, out_of_range, 0);
+    const Value result32 = e_.ins().select(in_range, shifted, e_.i32(0));
+
+    const Value result = e_.zext(types::I64(), result32);
+
+    e_.store_gpr(ra, result);
+
+    if (rc)
+        e_.record_cr(0, result);
+}
+
+CLHandler(srawi) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
+    const auto rc = info_.mInst.field_rc();
+    const auto sh = info_.mInst.field_sh();
+
+    const Value word = e_.ins().ireduce(types::I32(), e_.load_gpr(rs));
+    const Value shifted = sh ? e_.ins().sshr_imm_u(word, sh) : word;
+    const Value result = e_.sext(types::I64(), shifted);
+
+    Value ca = e_.i8(0);
+
+    if (sh) {
+        const uint32_t discarded_mask = (uint32_t{1} << sh) - 1;
+        const uint32_t ca_test_mask = 0x80000000u | discarded_mask;
+        const Value tested = e_.ins().band_imm_u(word, ca_test_mask);
+
+        ca = e_.ins().icmp_imm_u(IntCC::CL_INTCC_UNSIGNED_GREATER_THAN, tested, 0x80000000u);
+    }
+
+    e_.store_ca(ca);
+    e_.store_gpr(ra, result);
+
+    if (rc)
+        e_.record_cr(0, result);
+}
+
+CLHandler(rlwimi) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
+    const auto sh = info_.mInst.field_sh();
+    const auto me = info_.mInst.field_me();
+    const auto mb = info_.mInst.field_mb();
+    const auto rc = info_.mInst.field_rc();
+
+    const uint64_t mask = PPCMASK(mb + 32, me + 32);
+
+    const Value old_ra = e_.load_gpr(ra);
+    const Value word = e_.ins().ireduce(types::I32(), e_.load_gpr(rs));
+    const Value rotated = sh ? e_.ins().rotl_imm_u(word, sh) : word;
+
+    Value inserted = e_.zext(types::I64(), rotated);
+
+    if (mask >> 32) {
+        inserted = e_.ins().bor(inserted, e_.ins().ishl_imm_u(inserted, 32));
+    }
+
+    Value result;
+
+    if (mask == UINT64_MAX) {
+        result = inserted;
+    } else {
+        // result = (inserted & mask) | (old_ra & ~mask)
+        result = e_.ins().bitselect(e_.i64(mask), inserted, old_ra);
+    }
+
+    e_.store_gpr(ra, result);
+
+    if (rc)
+        e_.record_cr(0, result);
+}
+
 CLHandler(rlwinm) {
     const auto ra = info_.mInst.field_ra();
     const auto rs = info_.mInst.field_rs();
@@ -264,27 +447,37 @@ CLHandler(rlwinm) {
     const Value source = e_.load_gpr(rs);
 
     const Value result = [&]() -> Value {
-        // a nonwrapping mask with no rotation can operate directly on the full gpr
-        if (mask <= UINT32_MAX && sh == 0)
-            return e_.ins().band(source, e_.i64(mask));
+        // no rotation and the mask only touches the low word:
+        // operating directly on the GPR avoids the truncate/zext pair.
+        if (sh == 0 && !(mask >> 32)) {
+            return mask == UINT32_MAX ? e_.zext(types::I64(), e_.ins().ireduce(types::I32(), source)) :
+                                        e_.ins().band(source, e_.i64(mask));
+        }
 
         const Value word = e_.ins().ireduce(types::I32(), source);
 
-        // the mask discards every wrapped bit so a word shift and zero extension suffice
-        if (InstrCheck_rlx_only_needs_low(sh, mask))
-            return e_.zext(types::I64(), e_.ins().ishl(word, e_.i32(sh)));
+        // if every bit that would wrap around is masked away,
+        // rotation reduces to a simple left shift.
+        if (InstrCheck_rlx_only_needs_low(sh, mask)) {
+            return e_.zext(types::I64(), e_.ins().ishl_imm_u(word, sh));
+        }
 
-        const Value rotated = sh ? e_.ins().rotl(word, e_.i32(sh)) : word;
+        const Value rotated = sh ? e_.ins().rotl_imm_u(word, sh) : word;
 
-        // use a word mask before zero extending the result to the gpr width
-        if (mask <= UINT32_MAX) {
-            const Value masked = mask == UINT32_MAX ? rotated : e_.ins().band(rotated, e_.i32(mask));
+        // mask only touches the low 32 bits, so do the mask while
+        // still operating on I32 and only then zero-extend.
+        if (!(mask >> 32)) {
+            const Value masked
+                = mask == UINT32_MAX ? rotated : e_.ins().band(rotated, e_.i32(static_cast<uint32_t>(mask)));
+
             return e_.zext(types::I64(), masked);
         }
 
-        // wrapping masks include the upper word of the architectural repeated rotation
+        // ROTL32 conceptually repeats the rotated word into both
+        // halves of the 64-bit intermediate.
         const Value low = e_.zext(types::I64(), rotated);
-        const Value repeated = e_.ins().bor(e_.ins().ishl(low, e_.i64(32)), low);
+        const Value repeated = e_.ins().bor(e_.ins().ishl_imm_u(low, 32), low);
+
         return mask == UINT64_MAX ? repeated : e_.ins().band(repeated, e_.i64(mask));
     }();
 

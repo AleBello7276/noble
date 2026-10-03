@@ -19,9 +19,17 @@ static inline void branch_call(EmitterContext& e_, InstructionInfo& info_, FuncI
         e_.Return();
         return;
     }
+
     const Value nia
         = e_.ins().load(types::I32(), e_.builder.memflags_new(), e_.vCpuState, offsetof(PPCContext, NIA));
-    const Value resumed = e_.ins().icmp(IntCC::CL_INTCC_EQUAL, nia, e_.i32(nextAddress));
+
+    const Value action
+        = e_.ins().load(types::I32(), e_.builder.memflags_new(), e_.vCpuState, offsetof(PPCContext, Action));
+
+    const Value resumed = e_.ins().band(
+        e_.ins().icmp(IntCC::CL_INTCC_EQUAL, nia, e_.i32(nextAddress)),
+        e_.ins().icmp(IntCC::CL_INTCC_EQUAL, action, e_.i32(static_cast<uint32_t>(HostAction::None))));
+
     const Block continuation = e_.builder.create_block();
     const Block dispatched = e_.builder.create_block();
 

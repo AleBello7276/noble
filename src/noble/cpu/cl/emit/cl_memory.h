@@ -2,9 +2,17 @@
 
 #include "cl_util.h"
 
+CLHandler(dcbt) {
+    // stub, ingore
+}
+
+CLHandler(dcbtst) {
+    // stub, ignore
+}
+
 /*
     Load instructions
-*/
+ */
 
 // byte
 CLHandler(lbz) {

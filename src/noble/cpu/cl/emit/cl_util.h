@@ -5,13 +5,57 @@
 #include "cranelift.h"
 #include <assert.h>
 
+#include <cstdint>
+
 using namespace cranelift;
 
 using EmitterHandler = void (*)(EmitterContext& e_, InstructionInfo& info_);
 
 #define CLHandler(name) inline void cl_##name##_handler(EmitterContext& e_, InstructionInfo& info_)
 
-#include <cstdint>
+constexpr std::int32_t GPROffset(size_t index) {
+    return static_cast<std::int32_t>(offsetof(PPCContext, GPRs) + index * sizeof(GPR));
+}
+
+constexpr std::int32_t FPROffset(size_t index) {
+    return static_cast<std::int32_t>(offsetof(PPCContext, FPRs) + index * sizeof(FPR));
+}
+
+constexpr std::int32_t SPROffset(size_t struct_offset) {
+    return static_cast<std::int32_t>(offsetof(PPCContext, SPRs) + struct_offset);
+}
+
+constexpr std::int32_t CRFieldBitOffset(size_t field_index, size_t bit_index = 0) {
+    return static_cast<std::int32_t>(offsetof(PPCContext, ControlRegister) + (4 * field_index) + bit_index);
+}
+
+constexpr std::int32_t GetXER_CA_Offset() {
+    return static_cast<std::int32_t>(SPROffset(offsetof(SPRState, XER)) + offsetof(XERr, CA));
+}
+
+// TODO: template this
+inline Value add_did_carry_imm32(EmitterContext& e_, Value lhs, uint32_t rhs) {
+    return e_.ins().icmp_imm_u(IntCC::CL_INTCC_UNSIGNED_GREATER_THAN, e_.ins().ireduce(types::I32(), lhs),
+                               ~rhs);
+}
+
+// TODO: template this
+inline Value sub_did_carry_imm32(EmitterContext& e_, uint32_t lhs, Value rhs) {
+    return e_.ins().icmp_imm_u(IntCC::CL_INTCC_UNSIGNED_LESS_THAN_OR_EQUAL,
+                               e_.ins().ireduce(types::I32(), rhs), lhs);
+}
+
+inline Value sub_with_carry_did_carry32(EmitterContext& e_, Value lhs, Value rhs, Value ca) {
+    const Value lhs32 = e_.ins().ireduce(types::I32(), lhs);
+    const Value rhs32 = e_.ins().ireduce(types::I32(), rhs);
+    const Value ca32 = e_.ins().uextend(types::I32(), ca);
+
+    // {rb_plus_ca, overflow} = RB + CA
+    //  CA_out = overflow || rb_plus_ca > RA
+    const auto [adjusted_rhs, overflow] = e_.ins().uadd_overflow(rhs32, ca32);
+    const Value greater = e_.ins().icmp(IntCC::CL_INTCC_UNSIGNED_GREATER_THAN, adjusted_rhs, lhs32);
+    return e_.ins().bor(overflow, greater);
+}
 
 template <unsigned Bits>
 constexpr std::int64_t sign_extend(std::uint32_t v) noexcept {
@@ -89,8 +133,8 @@ inline void emit_load(EmitterContext& e_, InstructionInfo& info_) {
     // load displacement
     Value off;
     if constexpr (Bits == 64) {
-        const auto ds = info_.mInst.field_ds();
-        off = e_.iconst(types::I64(), sign_extend<16>(ds << 2));
+        // the decoder returns the signed byte displacement with its implicit low bits included
+        off = e_.i64(info_.mInst.field_ds());
     } else {
         const auto d = info_.mInst.field_offset();
         off = e_.iconst(types::I64(), sign_extend<16>(d));
@@ -183,8 +227,8 @@ inline void emit_store(EmitterContext& e_, InstructionInfo& info_) {
     // load displacement
     Value off;
     if constexpr (Bits == 64) {
-        const auto ds = info_.mInst.field_ds();
-        off = e_.iconst(types::I64(), sign_extend<16>(ds << 2));
+        // the decoder returns the signed byte displacement with its implicit low bits included
+        off = e_.i64(info_.mInst.field_ds());
     } else {
         const auto d = info_.mInst.field_offset();
         off = e_.iconst(types::I64(), sign_extend<16>(d));

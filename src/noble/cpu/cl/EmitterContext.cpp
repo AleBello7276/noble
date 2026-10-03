@@ -1,29 +1,10 @@
 #include "EmitterContext.h"
+#include "emit/cl_util.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
-
-namespace {
-
-constexpr std::int32_t GPROffset(size_t index) {
-    return static_cast<std::int32_t>(offsetof(PPCContext, GPRs) + index * sizeof(GPR));
-}
-
-constexpr std::int32_t FPROffset(size_t index) {
-    return static_cast<std::int32_t>(offsetof(PPCContext, FPRs) + index * sizeof(FPR));
-}
-
-constexpr std::int32_t SPROffset(size_t struct_offset) {
-    return static_cast<std::int32_t>(offsetof(PPCContext, SPRs) + struct_offset);
-}
-
-constexpr std::int32_t CRFieldBitOffset(size_t field_index, size_t bit_index = 0) {
-    return static_cast<std::int32_t>(offsetof(PPCContext, ControlRegister) + (4 * field_index) + bit_index);
-}
-
-}  // namespace
 
 cranelift::Value EmitterContext::load_gpr(size_t index) {
     if (index >= PPCContext::GPR_COUNT)
@@ -168,6 +149,14 @@ cranelift::Value EmitterContext::store_spr(eSPR type, cranelift::Value value) {
     default:
         throw std::invalid_argument("unsupported spr number");
     }
+}
+
+void EmitterContext::store_ca(cranelift::Value value) {
+    ins().store(builder.memflags_new(), value, vCpuState, GetXER_CA_Offset());
+}
+
+cranelift::Value EmitterContext::load_ca() {
+    return builder.ins().load(cranelift::types::I8(), builder.memflags_new(), vCpuState, GetXER_CA_Offset());
 }
 
 void EmitterContext::FlushState() {

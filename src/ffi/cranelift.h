@@ -617,6 +617,19 @@ public:
     // add two integer values
     CL_BINARY_METHOD(iadd)
 
+    // add equal-width scalar integers and return the sum followed by an i8 unsigned overflow flag
+    std::pair<Value, Value> uadd_overflow(Value left, Value right) const noexcept {
+        const auto result = cl_ins_uadd_overflow(builder_, left, right);
+        return {result.first, result.second};
+    }
+
+    // include an i8 carry input where nonzero means one and return the sum followed by an i8 overflow flag
+    // the pinned x64 backend currently rejects this instruction during compilation
+    std::pair<Value, Value> uadd_overflow_cin(Value left, Value right, Value carry_in) const noexcept {
+        const auto result = cl_ins_uadd_overflow_cin(builder_, left, right, carry_in);
+        return {result.first, result.second};
+    }
+
     // subtract the right integer from the left integer
     CL_BINARY_METHOD(isub)
 
@@ -704,6 +717,162 @@ public:
         return cl_ins_iadd_imm(builder_, value, immediate);
     }
 
+    // add an immediate to an integer with a sign-extended immediate
+    Value iadd_imm_s(Value value, std::int64_t immediate) const noexcept {
+        return cl_ins_iadd_imm_s(builder_, value, immediate);
+    }
+
+    // add an immediate to an integer with a zero-extended immediate
+    Value iadd_imm_u(Value value, std::uint64_t immediate) const noexcept {
+        return cl_ins_iadd_imm_u(builder_, value, immediate);
+    }
+
+    // multiply an integer by an immediate with a sign-extended immediate
+    Value imul_imm_s(Value value, std::int64_t immediate) const noexcept {
+        return cl_ins_imul_imm_s(builder_, value, immediate);
+    }
+
+    // multiply an integer by an immediate with a zero-extended immediate
+    Value imul_imm_u(Value value, std::uint64_t immediate) const noexcept {
+        return cl_ins_imul_imm_u(builder_, value, immediate);
+    }
+
+    // divide an unsigned integer by an immediate with a sign-extended immediate
+    Value udiv_imm_s(Value value, std::int64_t immediate) const noexcept {
+        return cl_ins_udiv_imm_s(builder_, value, immediate);
+    }
+
+    // divide an unsigned integer by an immediate with a zero-extended immediate
+    Value udiv_imm_u(Value value, std::uint64_t immediate) const noexcept {
+        return cl_ins_udiv_imm_u(builder_, value, immediate);
+    }
+
+    // divide a signed integer by an immediate with a sign-extended immediate
+    Value sdiv_imm_s(Value value, std::int64_t immediate) const noexcept {
+        return cl_ins_sdiv_imm_s(builder_, value, immediate);
+    }
+
+    // divide a signed integer by an immediate with a zero-extended immediate
+    Value sdiv_imm_u(Value value, std::uint64_t immediate) const noexcept {
+        return cl_ins_sdiv_imm_u(builder_, value, immediate);
+    }
+
+    // compute the unsigned remainder with an immediate divisor with a sign-extended immediate
+    Value urem_imm_s(Value value, std::int64_t immediate) const noexcept {
+        return cl_ins_urem_imm_s(builder_, value, immediate);
+    }
+
+    // compute the unsigned remainder with an immediate divisor with a zero-extended immediate
+    Value urem_imm_u(Value value, std::uint64_t immediate) const noexcept {
+        return cl_ins_urem_imm_u(builder_, value, immediate);
+    }
+
+    // compute the signed remainder with an immediate divisor with a sign-extended immediate
+    Value srem_imm_s(Value value, std::int64_t immediate) const noexcept {
+        return cl_ins_srem_imm_s(builder_, value, immediate);
+    }
+
+    // compute the signed remainder with an immediate divisor with a zero-extended immediate
+    Value srem_imm_u(Value value, std::uint64_t immediate) const noexcept {
+        return cl_ins_srem_imm_u(builder_, value, immediate);
+    }
+
+    // apply bitwise and with an immediate with a sign-extended immediate
+    Value band_imm_s(Value value, std::int64_t immediate) const noexcept {
+        return cl_ins_band_imm_s(builder_, value, immediate);
+    }
+
+    // apply bitwise and with an immediate with a zero-extended immediate
+    Value band_imm_u(Value value, std::uint64_t immediate) const noexcept {
+        return cl_ins_band_imm_u(builder_, value, immediate);
+    }
+
+    // apply bitwise or with an immediate with a sign-extended immediate
+    Value bor_imm_s(Value value, std::int64_t immediate) const noexcept {
+        return cl_ins_bor_imm_s(builder_, value, immediate);
+    }
+
+    // apply bitwise or with an immediate with a zero-extended immediate
+    Value bor_imm_u(Value value, std::uint64_t immediate) const noexcept {
+        return cl_ins_bor_imm_u(builder_, value, immediate);
+    }
+
+    // apply bitwise xor with an immediate with a sign-extended immediate
+    Value bxor_imm_s(Value value, std::int64_t immediate) const noexcept {
+        return cl_ins_bxor_imm_s(builder_, value, immediate);
+    }
+
+    // apply bitwise xor with an immediate with a zero-extended immediate
+    Value bxor_imm_u(Value value, std::uint64_t immediate) const noexcept {
+        return cl_ins_bxor_imm_u(builder_, value, immediate);
+    }
+
+    // rotate an integer left by an immediate with a sign-extended immediate
+    Value rotl_imm_s(Value value, std::int64_t immediate) const noexcept {
+        return cl_ins_rotl_imm_s(builder_, value, immediate);
+    }
+
+    // rotate an integer left by an immediate with a zero-extended immediate
+    Value rotl_imm_u(Value value, std::uint64_t immediate) const noexcept {
+        return cl_ins_rotl_imm_u(builder_, value, immediate);
+    }
+
+    // rotate an integer right by an immediate with a sign-extended immediate
+    Value rotr_imm_s(Value value, std::int64_t immediate) const noexcept {
+        return cl_ins_rotr_imm_s(builder_, value, immediate);
+    }
+
+    // rotate an integer right by an immediate with a zero-extended immediate
+    Value rotr_imm_u(Value value, std::uint64_t immediate) const noexcept {
+        return cl_ins_rotr_imm_u(builder_, value, immediate);
+    }
+
+    // shift an integer left by an immediate with a sign-extended immediate
+    Value ishl_imm_s(Value value, std::int64_t immediate) const noexcept {
+        return cl_ins_ishl_imm_s(builder_, value, immediate);
+    }
+
+    // shift an integer left by an immediate with a zero-extended immediate
+    Value ishl_imm_u(Value value, std::uint64_t immediate) const noexcept {
+        return cl_ins_ishl_imm_u(builder_, value, immediate);
+    }
+
+    // shift an integer right without sign extension by an immediate with a sign-extended immediate
+    Value ushr_imm_s(Value value, std::int64_t immediate) const noexcept {
+        return cl_ins_ushr_imm_s(builder_, value, immediate);
+    }
+
+    // shift an integer right without sign extension by an immediate with a zero-extended immediate
+    Value ushr_imm_u(Value value, std::uint64_t immediate) const noexcept {
+        return cl_ins_ushr_imm_u(builder_, value, immediate);
+    }
+
+    // shift an integer right with sign extension by an immediate with a sign-extended immediate
+    Value sshr_imm_s(Value value, std::int64_t immediate) const noexcept {
+        return cl_ins_sshr_imm_s(builder_, value, immediate);
+    }
+
+    // shift an integer right with sign extension by an immediate with a zero-extended immediate
+    Value sshr_imm_u(Value value, std::uint64_t immediate) const noexcept {
+        return cl_ins_sshr_imm_u(builder_, value, immediate);
+    }
+
+    // the suffix selects immediate extension and the condition selects comparison signedness
+    // scalar comparison results have type i8 and vector results use the corresponding lane mask type
+    Value icmp_imm_s(IntCC condition, Value value, std::int64_t immediate) const noexcept {
+        return cl_ins_icmp_imm_s(builder_, static_cast<std::uint32_t>(condition), value, immediate);
+    }
+
+    // compare against a zero-extended immediate with the supplied signed or unsigned condition
+    Value icmp_imm_u(IntCC condition, Value value, std::uint64_t immediate) const noexcept {
+        return cl_ins_icmp_imm_u(builder_, static_cast<std::uint32_t>(condition), value, immediate);
+    }
+
+    // compare with a signed immediate using the historical helper behavior
+    Value icmp_imm(IntCC condition, Value value, std::int64_t immediate) const noexcept {
+        return cl_ins_icmp_imm(builder_, static_cast<std::uint32_t>(condition), value, immediate);
+    }
+
     // compare two integers using the given condition
     Value icmp(IntCC condition, Value left, Value right) const noexcept {
         return cl_ins_icmp(builder_, static_cast<std::uint32_t>(condition), left, right);
@@ -712,6 +881,12 @@ public:
     // select one of two values according to a condition
     Value select(Value condition, Value if_true, Value if_false) const noexcept {
         return cl_ins_select(builder_, condition, if_true, if_false);
+    }
+
+    // select each bit from if_true where the mask bit is set and from if_false otherwise
+    // all operands must have the same type and the result is (mask & if_true) | (~mask & if_false)
+    Value bitselect(Value mask, Value if_true, Value if_false) const noexcept {
+        return cl_ins_bitselect(builder_, mask, if_true, if_false);
     }
 
     // jump to a block and pass its block arguments

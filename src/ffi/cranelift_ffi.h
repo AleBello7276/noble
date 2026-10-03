@@ -24,6 +24,12 @@ typedef struct ClDataDescription ClDataDescription;
 
 typedef uint16_t ClType;
 typedef uint32_t ClValue;
+
+// two instruction result ids in the same order as the rust tuple
+typedef struct ClValuePair {
+    ClValue first;
+    ClValue second;
+} ClValuePair;
 typedef uint32_t ClBlock;
 typedef uint32_t ClInst;
 typedef uint32_t ClVariable;
@@ -191,6 +197,12 @@ ClValue cl_ins_f32const(ClFunctionBuilder* builder, uint32_t bits);
 ClValue cl_ins_f64const(ClFunctionBuilder* builder, uint64_t bits);
 ClValue cl_ins_symbol_value(ClFunctionBuilder* builder, ClType type, ClGlobalValue global);
 ClValue cl_ins_iadd(ClFunctionBuilder* builder, ClValue left, ClValue right);
+// add equal-width scalar integers and return the sum followed by an i8 unsigned overflow flag
+ClValuePair cl_ins_uadd_overflow(ClFunctionBuilder* builder, ClValue left, ClValue right);
+// include an i8 carry input where nonzero means one and return the sum followed by an i8 overflow flag
+// the pinned x64 backend currently rejects this instruction during compilation
+ClValuePair cl_ins_uadd_overflow_cin(ClFunctionBuilder* builder, ClValue left, ClValue right,
+                                     ClValue carry_in);
 ClValue cl_ins_isub(ClFunctionBuilder* builder, ClValue left, ClValue right);
 ClValue cl_ins_imul(ClFunctionBuilder* builder, ClValue left, ClValue right);
 ClValue cl_ins_band(ClFunctionBuilder* builder, ClValue left, ClValue right);
@@ -222,8 +234,72 @@ ClValue cl_ins_ireduce(ClFunctionBuilder* builder, ClType type, ClValue value);
 ClValue cl_ins_uextend(ClFunctionBuilder* builder, ClType type, ClValue value);
 ClValue cl_ins_sextend(ClFunctionBuilder* builder, ClType type, ClValue value);
 ClValue cl_ins_iadd_imm(ClFunctionBuilder* builder, ClValue value, int64_t immediate);
+// add an immediate to an integer with a sign-extended immediate
+ClValue cl_ins_iadd_imm_s(ClFunctionBuilder* builder, ClValue value, int64_t immediate);
+// add an immediate to an integer with a zero-extended immediate
+ClValue cl_ins_iadd_imm_u(ClFunctionBuilder* builder, ClValue value, uint64_t immediate);
+// multiply an integer by an immediate with a sign-extended immediate
+ClValue cl_ins_imul_imm_s(ClFunctionBuilder* builder, ClValue value, int64_t immediate);
+// multiply an integer by an immediate with a zero-extended immediate
+ClValue cl_ins_imul_imm_u(ClFunctionBuilder* builder, ClValue value, uint64_t immediate);
+// divide an unsigned integer by an immediate with a sign-extended immediate
+ClValue cl_ins_udiv_imm_s(ClFunctionBuilder* builder, ClValue value, int64_t immediate);
+// divide an unsigned integer by an immediate with a zero-extended immediate
+ClValue cl_ins_udiv_imm_u(ClFunctionBuilder* builder, ClValue value, uint64_t immediate);
+// divide a signed integer by an immediate with a sign-extended immediate
+ClValue cl_ins_sdiv_imm_s(ClFunctionBuilder* builder, ClValue value, int64_t immediate);
+// divide a signed integer by an immediate with a zero-extended immediate
+ClValue cl_ins_sdiv_imm_u(ClFunctionBuilder* builder, ClValue value, uint64_t immediate);
+// compute the unsigned remainder with an immediate divisor with a sign-extended immediate
+ClValue cl_ins_urem_imm_s(ClFunctionBuilder* builder, ClValue value, int64_t immediate);
+// compute the unsigned remainder with an immediate divisor with a zero-extended immediate
+ClValue cl_ins_urem_imm_u(ClFunctionBuilder* builder, ClValue value, uint64_t immediate);
+// compute the signed remainder with an immediate divisor with a sign-extended immediate
+ClValue cl_ins_srem_imm_s(ClFunctionBuilder* builder, ClValue value, int64_t immediate);
+// compute the signed remainder with an immediate divisor with a zero-extended immediate
+ClValue cl_ins_srem_imm_u(ClFunctionBuilder* builder, ClValue value, uint64_t immediate);
+// apply bitwise and with an immediate with a sign-extended immediate
+ClValue cl_ins_band_imm_s(ClFunctionBuilder* builder, ClValue value, int64_t immediate);
+// apply bitwise and with an immediate with a zero-extended immediate
+ClValue cl_ins_band_imm_u(ClFunctionBuilder* builder, ClValue value, uint64_t immediate);
+// apply bitwise or with an immediate with a sign-extended immediate
+ClValue cl_ins_bor_imm_s(ClFunctionBuilder* builder, ClValue value, int64_t immediate);
+// apply bitwise or with an immediate with a zero-extended immediate
+ClValue cl_ins_bor_imm_u(ClFunctionBuilder* builder, ClValue value, uint64_t immediate);
+// apply bitwise xor with an immediate with a sign-extended immediate
+ClValue cl_ins_bxor_imm_s(ClFunctionBuilder* builder, ClValue value, int64_t immediate);
+// apply bitwise xor with an immediate with a zero-extended immediate
+ClValue cl_ins_bxor_imm_u(ClFunctionBuilder* builder, ClValue value, uint64_t immediate);
+// rotate an integer left by an immediate with a sign-extended immediate
+ClValue cl_ins_rotl_imm_s(ClFunctionBuilder* builder, ClValue value, int64_t immediate);
+// rotate an integer left by an immediate with a zero-extended immediate
+ClValue cl_ins_rotl_imm_u(ClFunctionBuilder* builder, ClValue value, uint64_t immediate);
+// rotate an integer right by an immediate with a sign-extended immediate
+ClValue cl_ins_rotr_imm_s(ClFunctionBuilder* builder, ClValue value, int64_t immediate);
+// rotate an integer right by an immediate with a zero-extended immediate
+ClValue cl_ins_rotr_imm_u(ClFunctionBuilder* builder, ClValue value, uint64_t immediate);
+// shift an integer left by an immediate with a sign-extended immediate
+ClValue cl_ins_ishl_imm_s(ClFunctionBuilder* builder, ClValue value, int64_t immediate);
+// shift an integer left by an immediate with a zero-extended immediate
+ClValue cl_ins_ishl_imm_u(ClFunctionBuilder* builder, ClValue value, uint64_t immediate);
+// shift an integer right without sign extension by an immediate with a sign-extended immediate
+ClValue cl_ins_ushr_imm_s(ClFunctionBuilder* builder, ClValue value, int64_t immediate);
+// shift an integer right without sign extension by an immediate with a zero-extended immediate
+ClValue cl_ins_ushr_imm_u(ClFunctionBuilder* builder, ClValue value, uint64_t immediate);
+// shift an integer right with sign extension by an immediate with a sign-extended immediate
+ClValue cl_ins_sshr_imm_s(ClFunctionBuilder* builder, ClValue value, int64_t immediate);
+// shift an integer right with sign extension by an immediate with a zero-extended immediate
+ClValue cl_ins_sshr_imm_u(ClFunctionBuilder* builder, ClValue value, uint64_t immediate);
+// compare with a sign-extended immediate and return an i8 result for scalar inputs
+ClValue cl_ins_icmp_imm_s(ClFunctionBuilder* builder, uint32_t condition, ClValue value, int64_t immediate);
+// compare with a zero-extended immediate and return an i8 result for scalar inputs
+ClValue cl_ins_icmp_imm_u(ClFunctionBuilder* builder, uint32_t condition, ClValue value, uint64_t immediate);
+// compare with a signed immediate using the historical helper behavior
+ClValue cl_ins_icmp_imm(ClFunctionBuilder* builder, uint32_t condition, ClValue value, int64_t immediate);
 ClValue cl_ins_icmp(ClFunctionBuilder* builder, uint32_t condition, ClValue left, ClValue right);
 ClValue cl_ins_select(ClFunctionBuilder* builder, ClValue condition, ClValue if_true, ClValue if_false);
+// select bits as mask and if_true or inverted mask and if_false with all operands of the same type
+ClValue cl_ins_bitselect(ClFunctionBuilder* builder, ClValue mask, ClValue if_true, ClValue if_false);
 ClInst cl_ins_jump(ClFunctionBuilder* builder, ClBlock destination, const ClValue* args, size_t len);
 ClInst cl_ins_brif(ClFunctionBuilder* builder, ClValue condition, ClBlock then_block,
                    const ClValue* then_args, size_t then_len, ClBlock else_block, const ClValue* else_args,

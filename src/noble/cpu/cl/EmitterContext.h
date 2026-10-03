@@ -42,6 +42,9 @@ public:
     cranelift::Value load_spr(eSPR type);
     cranelift::Value store_spr(eSPR type, cranelift::Value value);
 
+    void store_ca(cranelift::Value value);
+    cranelift::Value load_ca();
+
 public:
     /* flush cached register states to context */
     void FlushState();

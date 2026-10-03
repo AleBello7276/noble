@@ -118,32 +118,38 @@ enum eSPR : uint16_t {
     CTR = 9,
 };
 
-union uXER {
-    uint32_t hexValue;
-#if defined(__LITTLE_ENDIAN__) || defined(_WIN32)                                                            \
-    || (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
-    struct {
-        uint32_t ByteCount : 7;
-        uint32_t R0 : 22;
-        uint32_t CA : 1;
-        uint32_t OV : 1;
-        uint32_t SO : 1;
-    };
-#else
-    struct {
-        uint32_t SO : 1;
-        uint32_t OV : 1;
-        uint32_t CA : 1;
-        uint32_t R0 : 22;
-        uint32_t ByteCount : 7;
-    };
-#endif
+// union uXER {
+//     uint32_t hexValue;
+// #if  defined(__LITTLE_ENDIAN__) || defined(_WIN32) \
+//    || (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+//     struct {
+//         uint32_t ByteCount : 7;
+//         uint32_t R0 : 22;
+//         uint32_t CA : 1;
+//         uint32_t OV : 1;
+//         uint32_t SO : 1;
+//     };
+// #else
+//     struct {
+//         uint32_t SO : 1;
+//         uint32_t OV : 1;
+//         uint32_t CA : 1;
+//         uint32_t R0 : 22;
+//         uint32_t ByteCount : 7;
+//     };
+// #endif
+// };
+
+struct XERr {
+    bool CA;
+    bool OV;
+    bool SO;
 };
 
 struct SPRState {
     LR_t LR;
     CTR_t CTR;
-    uXER XER;
+    XERr XER;
 };
 
 class KThread;

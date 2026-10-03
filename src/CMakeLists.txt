@@ -38,10 +38,13 @@ set(Cpu
 set(Kernel
     noble/kernel/Kernel.cpp
     noble/kernel/KProcess.cpp
+    noble/kernel/KThread.cpp
     noble/kernel/hle/Shims.cpp
     noble/kernel/hle/Exports.cpp
     noble/kernel/hle/krnl/Threading.cpp
     noble/kernel/hle/krnl/Rtl.cpp
+    noble/kernel/hle/krnl/Memory.cpp
+    noble/kernel/hle/krnl/Modules.cpp
     noble/kernel/hle/krnl/Variables.cpp
 )
 

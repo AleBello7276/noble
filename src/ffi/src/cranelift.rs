@@ -15,6 +15,13 @@ use cranelift_module::{default_libcall_names, DataDescription, DataId, FuncId, L
 
 const INVALID: u32 = u32::MAX;
 
+// preserve the order of two cranelift instruction results across the c abi
+#[repr(C)]
+pub struct ClValuePair {
+    first: u32,
+    second: u32,
+}
+
 thread_local! {
     static LAST_ERROR: RefCell<CString> = RefCell::new(CString::new("").unwrap());
 }
@@ -624,6 +631,21 @@ macro_rules! binary_ins {
     };
 }
 binary_ins!(cl_ins_iadd, iadd);
+
+// add equal-width scalar integers and return the sum followed by the i8 unsigned overflow flag
+#[no_mangle]
+pub unsafe extern "C" fn cl_ins_uadd_overflow(builder: *mut FunctionBuilder<'static>, left: u32, right: u32) -> ClValuePair {
+    let (sum, overflow) = (*builder).ins().uadd_overflow(Value::from_u32(left), Value::from_u32(right));
+    ClValuePair { first: sum.as_u32(), second: overflow.as_u32() }
+}
+
+// add scalar integers with an i8 carry input where any nonzero input represents one
+#[no_mangle]
+pub unsafe extern "C" fn cl_ins_uadd_overflow_cin(builder: *mut FunctionBuilder<'static>, left: u32, right: u32, carry_in: u32) -> ClValuePair {
+    let (sum, overflow) = (*builder).ins().uadd_overflow_cin(Value::from_u32(left), Value::from_u32(right), Value::from_u32(carry_in));
+    ClValuePair { first: sum.as_u32(), second: overflow.as_u32() }
+}
+
 binary_ins!(cl_ins_isub, isub);
 binary_ins!(cl_ins_imul, imul);
 binary_ins!(cl_ins_band, band);
@@ -685,6 +707,34 @@ typed_unary_ins!(cl_ins_ireduce, ireduce);
 typed_unary_ins!(cl_ins_uextend, uextend);
 typed_unary_ins!(cl_ins_sextend, sextend);
 
+// expose both immediate extension modes without changing cranelift instruction semantics
+macro_rules! immediate_ins {
+    ($signed:ident, $unsigned:ident, $signed_method:ident, $unsigned_method:ident) => {
+        #[no_mangle]
+        pub unsafe extern "C" fn $signed(builder: *mut FunctionBuilder<'static>, value: u32, immediate: i64) -> u32 {
+            (*builder).ins().$signed_method(Value::from_u32(value), immediate).as_u32()
+        }
+        #[no_mangle]
+        pub unsafe extern "C" fn $unsigned(builder: *mut FunctionBuilder<'static>, value: u32, immediate: u64) -> u32 {
+            (*builder).ins().$unsigned_method(Value::from_u32(value), immediate as i64).as_u32()
+        }
+    };
+}
+immediate_ins!(cl_ins_iadd_imm_s, cl_ins_iadd_imm_u, iadd_imm_s, iadd_imm_u);
+immediate_ins!(cl_ins_imul_imm_s, cl_ins_imul_imm_u, imul_imm_s, imul_imm_u);
+immediate_ins!(cl_ins_udiv_imm_s, cl_ins_udiv_imm_u, udiv_imm_s, udiv_imm_u);
+immediate_ins!(cl_ins_sdiv_imm_s, cl_ins_sdiv_imm_u, sdiv_imm_s, sdiv_imm_u);
+immediate_ins!(cl_ins_urem_imm_s, cl_ins_urem_imm_u, urem_imm_s, urem_imm_u);
+immediate_ins!(cl_ins_srem_imm_s, cl_ins_srem_imm_u, srem_imm_s, srem_imm_u);
+immediate_ins!(cl_ins_band_imm_s, cl_ins_band_imm_u, band_imm_s, band_imm_u);
+immediate_ins!(cl_ins_bor_imm_s, cl_ins_bor_imm_u, bor_imm_s, bor_imm_u);
+immediate_ins!(cl_ins_bxor_imm_s, cl_ins_bxor_imm_u, bxor_imm_s, bxor_imm_u);
+immediate_ins!(cl_ins_rotl_imm_s, cl_ins_rotl_imm_u, rotl_imm_s, rotl_imm_u);
+immediate_ins!(cl_ins_rotr_imm_s, cl_ins_rotr_imm_u, rotr_imm_s, rotr_imm_u);
+immediate_ins!(cl_ins_ishl_imm_s, cl_ins_ishl_imm_u, ishl_imm_s, ishl_imm_u);
+immediate_ins!(cl_ins_ushr_imm_s, cl_ins_ushr_imm_u, ushr_imm_s, ushr_imm_u);
+immediate_ins!(cl_ins_sshr_imm_s, cl_ins_sshr_imm_u, sshr_imm_s, sshr_imm_u);
+
 #[no_mangle]
 pub unsafe extern "C" fn cl_ins_iadd_imm(builder: *mut FunctionBuilder<'static>, value: u32, immediate: i64) -> u32 {
     (*builder).ins().iadd_imm_s(Value::from_u32(value), immediate).as_u32()
@@ -707,9 +757,36 @@ pub unsafe extern "C" fn cl_ins_icmp(builder: *mut FunctionBuilder<'static>, con
     (*builder).ins().icmp(condition, Value::from_u32(left), Value::from_u32(right)).as_u32()
 }
 
+
+// compare using a sign-extended immediate and the supplied integer condition
+#[no_mangle]
+pub unsafe extern "C" fn cl_ins_icmp_imm_s(builder: *mut FunctionBuilder<'static>, condition: u32, value: u32, immediate: i64) -> u32 {
+    let Some(condition) = intcc(condition) else { return INVALID };
+    (*builder).ins().icmp_imm_s(condition, Value::from_u32(value), immediate).as_u32()
+}
+
+// compare using a zero-extended immediate while preserving its full unsigned bit pattern
+#[no_mangle]
+pub unsafe extern "C" fn cl_ins_icmp_imm_u(builder: *mut FunctionBuilder<'static>, condition: u32, value: u32, immediate: u64) -> u32 {
+    let Some(condition) = intcc(condition) else { return INVALID };
+    (*builder).ins().icmp_imm_u(condition, Value::from_u32(value), immediate as i64).as_u32()
+}
+
+// preserve the historical signed immediate comparison helper
+#[no_mangle]
+pub unsafe extern "C" fn cl_ins_icmp_imm(builder: *mut FunctionBuilder<'static>, condition: u32, value: u32, immediate: i64) -> u32 {
+    cl_ins_icmp_imm_s(builder, condition, value, immediate)
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn cl_ins_select(builder: *mut FunctionBuilder<'static>, condition: u32, if_true: u32, if_false: u32) -> u32 {
     (*builder).ins().select(Value::from_u32(condition), Value::from_u32(if_true), Value::from_u32(if_false)).as_u32()
+}
+
+// select each bit from if_true where the mask bit is set and from if_false otherwise
+#[no_mangle]
+pub unsafe extern "C" fn cl_ins_bitselect(builder: *mut FunctionBuilder<'static>, mask: u32, if_true: u32, if_false: u32) -> u32 {
+    (*builder).ins().bitselect(Value::from_u32(mask), Value::from_u32(if_true), Value::from_u32(if_false)).as_u32()
 }
 
 #[no_mangle]

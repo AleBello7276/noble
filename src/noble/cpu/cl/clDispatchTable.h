@@ -17,19 +17,32 @@ inline constexpr auto emitter_dispatch_table = [] {
     table[to_underlying(PpcOpcode::Bcctr)] = &cl_bcctr_handler;
 
     table[to_underlying(PpcOpcode::Add)] = &cl_add_handler;
+    table[to_underlying(PpcOpcode::Addze)] = &cl_addze_handler;
     table[to_underlying(PpcOpcode::Addis)] = &cl_addis_handler;
     table[to_underlying(PpcOpcode::Addi)] = &cl_addi_handler;
     table[to_underlying(PpcOpcode::Addic)] = &cl_addic_handler;
     table[to_underlying(PpcOpcode::Addic_)] = &cl_addic_handler;
+    table[to_underlying(PpcOpcode::Subf)] = &cl_subf_handler;
+    table[to_underlying(PpcOpcode::Subfic)] = &cl_subfic_handler;
     table[to_underlying(PpcOpcode::Subfe)] = &cl_subfe_handler;
+    table[to_underlying(PpcOpcode::And)] = &cl_and__handler;
+    table[to_underlying(PpcOpcode::Andi_)] = &cl_andi_handler;
     table[to_underlying(PpcOpcode::Or)] = &cl_or__handler;
     table[to_underlying(PpcOpcode::Ori)] = &cl_ori_handler;
+    table[to_underlying(PpcOpcode::Oris)] = &cl_oris_handler;
+    table[to_underlying(PpcOpcode::Cmp)] = &cl_cmp_handler;
     table[to_underlying(PpcOpcode::Cmpi)] = &cl_cmpi_handler;
     table[to_underlying(PpcOpcode::Cmpli)] = &cl_cmpli_handler;
     table[to_underlying(PpcOpcode::Cmpl)] = &cl_cmpl_handler;
     table[to_underlying(PpcOpcode::Extsb)] = &cl_extsb_handler;
     table[to_underlying(PpcOpcode::Cntlzw)] = &cl_cntlzw_handler;
+    table[to_underlying(PpcOpcode::Srawi)] = &cl_srawi_handler;
+    table[to_underlying(PpcOpcode::Slw)] = &cl_slw_handler;
     table[to_underlying(PpcOpcode::Rlwinm)] = &cl_rlwinm_handler;
+    table[to_underlying(PpcOpcode::Rlwimi)] = &cl_rlwimi_handler;
+
+    table[to_underlying(PpcOpcode::Dcbt)] = &cl_dcbt_handler;
+    table[to_underlying(PpcOpcode::Dcbtst)] = &cl_dcbtst_handler;
 
     // byte load/store
     table[to_underlying(PpcOpcode::Lbz)] = &cl_lbz_handler;

@@ -92,6 +92,7 @@ void Scheduler::MakeRunnable(KThread* thread) {
             return;
 
         thread->mState = ThreadState::Ready;
+        thread->SyncGuestState();
         ready_queue_.push_back(thread);
     }
 
@@ -147,6 +148,7 @@ void Scheduler::WorkerMain(HWT_ID processor_id, std::stop_token stop_token) {
 
             thread->mLastProcessor = thread->mCurrentProcessor;
             thread->mCurrentProcessor = processor_id;
+            thread->SyncGuestState();
         }
 
         ExecutionResult result = cpu_.Execute(thread->mContext, thread->mTerminateRequested, stop_token);
@@ -183,6 +185,7 @@ void Scheduler::HandleExecutionResult(HWT_ID processor_id, KThread* thread, Exec
             thread->mState = ThreadState::Ready;
             ready_queue_.push_back(thread);
         }
+        thread->SyncGuestState();
     }
 
     // notify all
@@ -208,6 +211,7 @@ bool Scheduler::WakeThread(KThread* thread) {
         thread->mWaitPending = false;
         if (thread->mState == ThreadState::Waiting) {
             thread->mState = ThreadState::Ready;
+            thread->SyncGuestState();
             ready_queue_.push_back(thread);
         }
         // a running worker handles an early wake when it processes the waiting result
@@ -253,6 +257,7 @@ void Scheduler::TerminateThread(KThread* thread, uint32_t exitCode) {
 
             thread->mState = ThreadState::Terminated;
             thread->mCurrentProcessor = kInvalidProcessor;
+            thread->SyncGuestState();
             cv_.notify_all();
             return;
         }
@@ -266,6 +271,7 @@ void Scheduler::TerminateThread(KThread* thread, uint32_t exitCode) {
             thread->mState = ThreadState::Terminated;
 
             thread->mCurrentProcessor = kInvalidProcessor;
+            thread->SyncGuestState();
 
             cv_.notify_all();
             return;
