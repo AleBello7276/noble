@@ -283,6 +283,20 @@ CLHandler(or_) {
         e_.record_cr(0, res);
 }
 
+CLHandler(orc) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
+    const auto rb = info_.mInst.field_rb();
+    const auto rc = info_.mInst.field_rc();
+
+    const Value result = e_.ins().bor(e_.load_gpr(rs), e_.ins().bnot(e_.load_gpr(rb)));
+
+    e_.store_gpr(ra, result);
+
+    if (rc)
+        e_.record_cr(0, result);
+}
+
 CLHandler(ori) {
     const auto ra = info_.mInst.field_ra();
     const auto rs = info_.mInst.field_rs();

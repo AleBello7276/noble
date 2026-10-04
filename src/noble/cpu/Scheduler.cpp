@@ -16,7 +16,6 @@
 #include <pthread.h>
 #endif
 
-
 void NameWorkerThread(HWT_ID processor_id) {
 #if defined(_WIN32)
 
@@ -251,6 +250,10 @@ void Scheduler::HandleExecutionResult(HWT_ID processor_id, KThread* thread, Exec
         thread->mCurrentProcessor = kInvalidProcessor;
 
         const bool termination_requested = thread->mTerminateRequested.load(std::memory_order_acquire);
+        if (result.reason == ExecutionReason::Waiting && thread->mWaitResult) {
+            thread->mContext.GPRs[3].s64 = std::bit_cast<int32_t>(*thread->mWaitResult);
+            thread->mWaitResult.reset();
+        }
         if (termination_requested || result.reason == ExecutionReason::Exited
             || result.reason == ExecutionReason::Fault) {
             thread->mState = ThreadState::Terminated;
@@ -298,16 +301,27 @@ bool Scheduler::PrepareWait(KThread* thread) {
         || thread->mTerminateRequested.load(std::memory_order_acquire))
         return false;
     thread->mWaitPending = true;
+    thread->mWaitResult.reset();
     return true;
 }
 
-bool Scheduler::WakeThread(KThread* thread) {
+bool Scheduler::WakeThread(KThread* thread, std::optional<uint32_t> result,
+                           const std::function<bool()>& acquire) {
     {
         std::scoped_lock lock(mutex_);
         if (!thread || !thread->mWaitPending || thread->mState == ThreadState::Terminated
             || thread->mTerminateRequested.load(std::memory_order_acquire))
             return false;
 
+        if (acquire && !acquire())
+            return false;
+
+        if (result) {
+            if (thread->mState == ThreadState::Running)
+                thread->mWaitResult = result;
+            else
+                thread->mContext.GPRs[3].s64 = std::bit_cast<int32_t>(*result);
+        }
         thread->mWaitPending = false;
         if (thread->mState == ThreadState::Waiting) {
             thread->mState = ThreadState::Ready;
@@ -320,6 +334,11 @@ bool Scheduler::WakeThread(KThread* thread) {
     }
     cv_.notify_all();
     return true;
+}
+
+bool Scheduler::IsThreadTerminated(KThread* thread) {
+    std::scoped_lock lock(mutex_);
+    return thread && thread->mState == ThreadState::Terminated;
 }
 
 KThread* Scheduler::CurrentThread() const {

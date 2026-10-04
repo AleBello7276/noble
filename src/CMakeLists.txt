@@ -47,6 +47,7 @@ set(Gpu
 
 set(Kernel
     noble/kernel/Kernel.cpp
+    noble/kernel/Dispatcher.cpp
     noble/kernel/KProcess.cpp
     noble/kernel/KThread.cpp
     noble/kernel/hle/Shims.cpp

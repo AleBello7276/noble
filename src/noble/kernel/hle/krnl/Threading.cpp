@@ -50,6 +50,29 @@ void KeInitializeDpc(Pointer<XDPC> dpc, GuestAddress routine, GuestAddress conte
     dpc->Initialize(routine, context);
 }
 
+uint32_t KeWaitForSingleObject(Kernel& kernel, KThread& thread, PPCContext& cpu,
+                               Pointer<X_DISPATCH_HEADER, PointerValidation::Report> object, uint32_t reason,
+                               uint32_t mode, uint32_t alertable,
+                               Pointer<const be<int64_t>, PointerValidation::Report> timeout) {
+    if (!object || (timeout.guest_address() && !timeout))
+        return 0xC0000005;
+
+    return kernel.WaitForSingleObject(thread, cpu, object.guest_address(), reason, mode, alertable != 0,
+                                      timeout ? std::optional<int64_t>(int64_t(*timeout)) : std::nullopt);
+}
+
+void KeInitializeEvent(Kernel& kernel, Pointer<X_KEVENT> event, uint32_t type, uint32_t state) {
+    kernel.InitializeEvent(event.guest_address(), type, state != 0);
+}
+
+uint32_t KeSetEvent(Kernel& kernel, Pointer<X_KEVENT> event, uint32_t increment, uint32_t wait) {
+    return kernel.SetEvent(event.guest_address());
+}
+
+uint32_t KeResetEvent(Kernel& kernel, Pointer<X_KEVENT> event) {
+    return kernel.ResetEvent(event.guest_address());
+}
+
 // create a guest thread and publish its outputs before making it runnable
 uint32_t ExCreateThread(Kernel& kernel, Memory& memory, KThread& caller,
                         Pointer<be<uint32_t>, PointerValidation::Report> handle_ptr, uint32_t stack_size,
@@ -137,6 +160,10 @@ constexpr std::array exports{
     Bind<&KiApcNormalRoutineNop>(XboxLibrary::XboxKrnl, "KiApcNormalRoutineNop"),
     Bind<&KiApcNormalRoutineNop>(XboxLibrary::XboxKrnl, "KiApcNormalRoutineNop_"),
     Bind<&KeInitializeDpc>(XboxLibrary::XboxKrnl, "KeInitializeDpc"),
+    Bind<&KeWaitForSingleObject>(XboxLibrary::XboxKrnl, "KeWaitForSingleObject"),
+    Bind<&KeInitializeEvent>(XboxLibrary::XboxKrnl, "KeInitializeEvent"),
+    Bind<&KeSetEvent>(XboxLibrary::XboxKrnl, "KeSetEvent"),
+    Bind<&KeResetEvent>(XboxLibrary::XboxKrnl, "KeResetEvent"),
     Bind<&ExCreateThread>(XboxLibrary::XboxKrnl, "ExCreateThread"),
     Bind<&KeSetBasePriorityThread>(XboxLibrary::XboxKrnl, "KeSetBasePriorityThread"),
 };

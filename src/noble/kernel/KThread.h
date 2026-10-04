@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include <optional>
 #include <stdint.h>
 
 #include "KObject.h"
@@ -92,6 +93,8 @@ public:
     std::atomic_bool mTerminateRequested = false;
     // scheduler mutex protects a wait prepared while the worker is still returning from guest code
     bool mWaitPending = false;
+    // retain an early completion until the executing worker has returned from the shim
+    std::optional<uint32_t> mWaitResult;
 
 private:
     friend class Kernel;

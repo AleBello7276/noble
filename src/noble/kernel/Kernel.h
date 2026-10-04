@@ -102,10 +102,23 @@ public:
     // release a section whose guest pointer has already been validated by a shim
     void LeaveCriticalSection(KThread& thread, hle::Pointer<hle::krnl::CriticalSection> section);
 
+    // wait on a guest dispatcher object and yield when the wait cannot complete immediately
+    uint32_t WaitForSingleObject(KThread& thread, PPCContext& cpu, GuestAddress object, uint32_t reason,
+                                 uint32_t mode, bool alertable, std::optional<int64_t> timeout);
+
+    // initialize or signal guest events and satisfy their pending waits
+    void InitializeEvent(GuestAddress address, uint32_t type, bool state);
+    uint32_t SetEvent(GuestAddress address);
+    uint32_t ResetEvent(GuestAddress address);
+
 private:
     KProcess* CreateGuestProcessLocked(const ProcessCreateInfo& info);
     // refresh the shared timestamp record from the kernel clock origin
     void UpdateTimeStampBundle();
+    // complete signaled waits and expire deadlines from the kernel timer
+    void PollDispatcherWaits();
+    void PollDispatcherWaitsLocked();
+    uint64_t WaitClockTicks() const;
 
     void InitializeThreadContext(KThread& thread, const ThreadCreateInfo& info);
 
@@ -135,6 +148,15 @@ private:
     mutable std::mutex titleTerminateMutex_;
     std::vector<TitleTerminateNotification> titleTerminateNotifications_;
     std::unordered_map<GuestAddress, std::deque<KThread*>> criticalSectionWaiters_;
+
+    struct DispatcherWait {
+        KThread* thread;
+        GuestAddress object;
+        std::optional<uint64_t> deadline;
+        bool absolute;
+    };
+    std::mutex dispatcherMutex_;
+    std::deque<DispatcherWait> dispatcherWaits_;
 
     uint32_t next_process_id_ = 1;
     uint32_t next_thread_id_ = 1;

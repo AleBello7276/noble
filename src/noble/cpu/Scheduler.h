@@ -3,7 +3,9 @@
 #include <array>
 #include <condition_variable>
 #include <deque>
+#include <functional>
 #include <mutex>
+#include <optional>
 #include <stop_token>
 #include <thread>
 
@@ -45,7 +47,12 @@ public:
     bool PrepareWait(KThread* thread);
 
     // wake a prepared or parked wait without scheduling a thread on two workers
-    bool WakeThread(KThread* thread);
+    // optionally acquire an object and publish its wait status under the scheduler lock
+    bool WakeThread(KThread* thread, std::optional<uint32_t> result = {},
+                    const std::function<bool()>& acquire = {});
+
+    // inspect thread completion without racing a scheduler worker
+    bool IsThreadTerminated(KThread* thread);
 
 private:
     /* beating main loop */

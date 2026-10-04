@@ -75,6 +75,7 @@ bool Kernel::Initialize() {
         timeStampTimer_ = std::jthread([this](std::stop_token stop) {
             while (!stop.stop_requested()) {
                 UpdateTimeStampBundle();
+                PollDispatcherWaits();
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
         });
@@ -106,6 +107,11 @@ void Kernel::Shutdown() {
     {
         std::scoped_lock lock(criticalSectionMutex_);
         criticalSectionWaiters_.clear();
+    }
+
+    {
+        std::scoped_lock lock(dispatcherMutex_);
+        dispatcherWaits_.clear();
     }
 
     for (auto& process : processes_) {
