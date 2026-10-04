@@ -52,6 +52,7 @@ set(Kernel
     noble/kernel/hle/krnl/Modules.cpp
     noble/kernel/hle/krnl/Variables.cpp
     noble/kernel/hle/krnl/Video.cpp
+    noble/kernel/hle/krnl/XConfig.cpp
     noble/kernel/hle/xam/Video.cpp
 )
 
