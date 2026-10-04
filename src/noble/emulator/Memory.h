@@ -39,6 +39,11 @@ public:
     GuestAddress AllocateVirtual(size_t size, size_t alignment = 4096,
                                  GuestHeapKind kind = GuestHeapKind::Virtual4K);
 
+    // allocate committed physical pages within inclusive physical address bounds
+    // return the guest physical window address or zero on failure
+    GuestAddress AllocatePhysical(size_t size, size_t alignment, GuestHeapKind kind, uint32_t minimum,
+                                  uint32_t maximum, MemoryProtection protection);
+
     /* allocate guest pages at a specific address */
     bool AllocateFixed(GuestAddress address, size_t size);
 

@@ -54,6 +54,7 @@ inline constexpr auto emitter_dispatch_table = [] {
     table[to_underlying(PpcOpcode::Fmuls)] = &cl_fmuls_handler;
     table[to_underlying(PpcOpcode::Fcfid)] = &cl_fcfid_handler;
     table[to_underlying(PpcOpcode::Fdiv)] = &cl_fdiv_handler;
+    table[to_underlying(PpcOpcode::Fdivs)] = &cl_fdivs_handler;
     table[to_underlying(PpcOpcode::Fmr)] = &cl_fmr_handler;
     table[to_underlying(PpcOpcode::Fabs)] = &cl_fabs_handler;
     table[to_underlying(PpcOpcode::Fadd)] = &cl_fadd_handler;
@@ -72,6 +73,9 @@ inline constexpr auto emitter_dispatch_table = [] {
     table[to_underlying(PpcOpcode::Fsel)] = &cl_fsel_handler;
     table[to_underlying(PpcOpcode::Fsqrt)] = &cl_fsqrt_handler;
     table[to_underlying(PpcOpcode::Fsqrts)] = &cl_fsqrts_handler;
+    table[to_underlying(PpcOpcode::Fctiw)] = &cl_fctiw_handler;
+    table[to_underlying(PpcOpcode::Fctiwz)] = &cl_fctiwz_handler;
+    table[to_underlying(PpcOpcode::Frsp)] = &cl_frsp_handler;
 
     table[to_underlying(PpcOpcode::Dcbt)] = &cl_dcbt_handler;
     table[to_underlying(PpcOpcode::Dcbtst)] = &cl_dcbtst_handler;

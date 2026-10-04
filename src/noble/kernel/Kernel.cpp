@@ -6,6 +6,7 @@
 #include "core/byte_swap.h"
 #include "cpu/Scheduler.h"
 #include "emulator/Memory.h"
+#include "gpu/NullGPU.h"
 #include "hle/Exports.h"
 #include "hle/krnl/Variables.h"
 #include <algorithm>
@@ -35,8 +36,9 @@ bool TLSAllocated(const GuestKernelProcess& process, uint32_t index, uint32_t li
 
 }  // namespace
 
-Kernel::Kernel(Memory& memory, Scheduler& scheduler)
-    : memory_(memory), scheduler_(scheduler), imports_(*this, memory) {}
+Kernel::Kernel(Memory& memory, Scheduler& scheduler, std::unique_ptr<GPUBackend> gpu)
+    : memory_(memory), scheduler_(scheduler), gpu_(gpu ? std::move(gpu) : std::make_unique<NullGPU>()),
+      imports_(*this, memory) {}
 
 bool Kernel::Initialize() {
     if (timeStampTimer_.joinable())
@@ -46,6 +48,10 @@ bool Kernel::Initialize() {
     next_thread_id_ = 1;
 
     try {
+        if (!gpu_->Initialize()) {
+            gpu_->Shutdown();
+            return false;
+        }
         hle::RegisterExports(imports_);
         const auto timestampAddress = imports_.VariableAddress(XboxLibrary::XboxKrnl, "KeTimeStampBundle");
 
@@ -74,6 +80,7 @@ bool Kernel::Initialize() {
         timeStampBundle_ = nullptr;
 
         imports_.ClearVariables();
+        gpu_->Shutdown();
         return false;
     }
 
@@ -85,6 +92,13 @@ void Kernel::Shutdown() {
     if (timeStampTimer_.joinable())
         timeStampTimer_.join();
     timeStampBundle_ = nullptr;
+
+    gpu_->Shutdown();
+
+    {
+        std::lock_guard lock(titleTerminateMutex_);
+        titleTerminateNotifications_.clear();
+    }
 
     {
         std::scoped_lock lock(criticalSectionMutex_);
@@ -633,6 +647,34 @@ KProcess* Kernel::CurrentProcess() {
         return nullptr;
 
     return thread->process();
+}
+
+void Kernel::SetGraphicsInterruptCallback(GuestAddress routine, GuestAddress userData) {
+    gpu_->SetInterruptCallback(routine, userData);
+}
+
+Kernel::GraphicsInterruptCallback Kernel::GetGraphicsInterruptCallback() const {
+    return gpu_->GetInterruptCallback();
+}
+
+void Kernel::RegisterTitleTerminateNotification(GuestAddress routine, uint32_t priority) {
+    std::lock_guard lock(titleTerminateMutex_);
+    titleTerminateNotifications_.push_back({routine, priority});
+}
+
+void Kernel::RemoveTitleTerminateNotification(GuestAddress routine) {
+    std::lock_guard lock(titleTerminateMutex_);
+    const auto found = std::find_if(titleTerminateNotifications_.begin(), titleTerminateNotifications_.end(),
+                                    [routine](const auto& notification) {
+                                        return notification.routine == routine;
+                                    });
+    if (found != titleTerminateNotifications_.end())
+        titleTerminateNotifications_.erase(found);
+}
+
+std::vector<Kernel::TitleTerminateNotification> Kernel::GetTitleTerminateNotifications() const {
+    std::lock_guard lock(titleTerminateMutex_);
+    return titleTerminateNotifications_;
 }
 
 void Kernel::ExitThread(KThread* thread, uint32_t exit_code) {

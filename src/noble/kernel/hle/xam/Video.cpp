@@ -6,8 +6,8 @@
 namespace hle::xam {
 
 // report the same video mode as the kernel query
-void XGetVideoMode(Pointer<krnl::VideoMode> videoMode) {
-    krnl::QueryVideoMode(*videoMode);
+void XGetVideoMode(Kernel& kernel, Pointer<krnl::VideoMode> videoMode) {
+    krnl::QueryVideoMode(kernel, *videoMode);
 }
 
 constexpr std::array exports{

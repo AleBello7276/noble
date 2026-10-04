@@ -36,6 +36,10 @@ set(Cpu
     noble/cpu/cl/EmitterContext.cpp
 )
 
+set(Gpu
+    noble/gpu/NullGPU.cpp
+)
+
 set(Kernel
     noble/kernel/Kernel.cpp
     noble/kernel/KProcess.cpp
@@ -61,6 +65,7 @@ set(SRC
     ${Emulator}
     ${Core}
     ${Cpu} 
+    ${Gpu}
     ${Kernel} 
 )
 

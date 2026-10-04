@@ -25,7 +25,7 @@ static_assert(offsetof(VideoMode, videoStandard) == 0x18);
 static_assert(offsetof(VideoMode, reserved) == 0x24);
 
 // fill the reported mode shared by the kernel and xam video queries
-void QueryVideoMode(VideoMode& videoMode);
+void QueryVideoMode(Kernel& kernel, VideoMode& videoMode);
 
 // expose the typed video implementations for kernel export registration
 std::span<const Export> VideoExports();

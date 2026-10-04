@@ -55,6 +55,20 @@ CLHandler(fdiv) {
     e_.update_fpscr(rc);
 }
 
+CLHandler(fdivs) {
+    const auto frt = info_.mInst.field_frd();
+    const auto fra = info_.mInst.field_fra();
+    const auto frb = info_.mInst.field_frb();
+    const auto rc = info_.mInst.field_rc();
+
+    Value res = e_.ins().fdiv(e_.load_fpr(fra), e_.load_fpr(frb));
+
+    res = e_.to_single(res);
+
+    e_.store_fpr(frt, res);
+    e_.update_fpscr(rc);
+}
+
 CLHandler(fmr) {
     const auto frt = info_.mInst.field_frd();
     const auto frb = info_.mInst.field_frb();
@@ -344,6 +358,83 @@ CLHandler(fsqrts) {
     Value res = e_.ins().sqrt(e_.load_fpr(frb));
 
     res = e_.to_single(res);
+
+    e_.store_fpr(frt, res);
+    e_.update_fpscr(rc);
+}
+
+// TODO: optimise
+CLHandler(fctiw) {
+    const auto frt = info_.mInst.field_frd();
+    const auto frb = info_.mInst.field_frb();
+    const auto rc = info_.mInst.field_rc();
+
+    const Value src = e_.load_fpr(frb);
+
+    // FPSCR.RN:
+    //   0 = nearest, ties to even
+    //   1 = toward zero
+    //   2 = toward +infinity
+    //   3 = toward -infinity
+    const Value rn = e_.ins().band_imm_u(e_.load_fpscr(), 0x3);
+
+    const Value nearest = e_.ins().nearest(src);
+    const Value toward_zero = e_.ins().trunc(src);
+    const Value toward_positive = e_.ins().ceil(src);
+    const Value toward_negative = e_.ins().floor(src);
+
+    Value rounded = nearest;
+
+    rounded = e_.ins().select(e_.ins().icmp_imm_u(IntCC::CL_INTCC_EQUAL, rn, 1), toward_zero, rounded);
+    rounded = e_.ins().select(e_.ins().icmp_imm_u(IntCC::CL_INTCC_EQUAL, rn, 2), toward_positive, rounded);
+    rounded = e_.ins().select(e_.ins().icmp_imm_u(IntCC::CL_INTCC_EQUAL, rn, 3), toward_negative, rounded);
+
+    // ppc saturates values outside the I32 range.
+    const Value converted = e_.ins().fcvt_to_sint_sat(types::I32(), rounded);
+
+    // cranelift converts NaN to zero for *_sat
+    // ppc requires 0x80000000
+    const Value is_nan = e_.ins().fcmp(FloatCC::CL_FLOATCC_UNORDERED, src, src);
+
+    const Value integer = e_.ins().select(is_nan, e_.i32(0x80000000u), converted);
+
+    // xenia sign-extends the integer word to 64 bits and then
+    // treats those bits as the contents of the FPR
+    const Value bits = e_.sext64(integer);
+    const Value res = e_.ins().bitcast(types::F64(), MemFlags{}, bits);
+
+    e_.store_fpr(frt, res);
+    e_.update_fpscr(rc);
+}
+
+CLHandler(fctiwz) {
+    const auto frt = info_.mInst.field_frd();
+    const auto frb = info_.mInst.field_frb();
+    const auto rc = info_.mInst.field_rc();
+
+    const Value src = e_.load_fpr(frb);
+
+    const Value rounded = e_.ins().trunc(src);
+    const Value converted = e_.ins().fcvt_to_sint_sat(types::I32(), rounded);
+    const Value is_nan = e_.ins().fcmp(FloatCC::CL_FLOATCC_UNORDERED, src, src);
+
+    const Value integer = e_.ins().select(is_nan, e_.i32(0x80000000u), converted);
+    const Value bits = e_.sext64(integer);
+
+    const Value res = e_.ins().bitcast(types::F64(), MemFlags{}, bits);
+
+    e_.store_fpr(frt, res);
+    e_.update_fpscr(rc);
+}
+
+CLHandler(frsp) {
+    const auto frt = info_.mInst.field_frd();
+    const auto frb = info_.mInst.field_frb();
+    const auto rc = info_.mInst.field_rc();
+
+    // TODO: frsp must honor FPSCR.RN but whatever
+    // cranelift fdemote always uses nearest-even
+    const Value res = e_.to_single(e_.load_fpr(frb));
 
     e_.store_fpr(frt, res);
     e_.update_fpscr(rc);

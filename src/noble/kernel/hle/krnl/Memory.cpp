@@ -124,8 +124,29 @@ uint32_t NtAllocateVirtualMemory(Memory& memory, Pointer<be<uint32_t>, PointerVa
     return statusNoMemory;
 }
 
+uint32_t MmAllocatePhysicalMemoryEx(Memory& memory, uint32_t flags, uint32_t regionSize, uint32_t protect,
+                                    uint32_t minimum, uint32_t maximum, uint32_t alignment) {
+    constexpr uint32_t supported = 0x2 | 0x4 | 0x200 | 0x400 | memLargePages | mem16MBPages;
+    const uint32_t access = protect & 0xFF;
+    if ((access != 0x2 && access != 0x4) || (protect & ~supported) || (protect & 0x600) == 0x600
+        || (protect & (memLargePages | mem16MBPages)) == (memLargePages | mem16MBPages))
+        return 0;
+
+    const GuestHeapKind kind = protect & memLargePages ? GuestHeapKind::Physical64K :
+                               protect & mem16MBPages  ? GuestHeapKind::Physical16M :
+                                                         GuestHeapKind::Physical4K;
+    const MemoryProtection protection
+        = access == 0x2 ? MemoryProtection::ReadOnly : MemoryProtection::ReadWrite;
+    try {
+        return memory.AllocatePhysical(regionSize, alignment, kind, minimum, maximum, protection);
+    } catch (const std::bad_alloc&) {
+        return 0;
+    }
+}
+
 constexpr std::array exports{
     Bind<&NtAllocateVirtualMemory>(XboxLibrary::XboxKrnl, "NtAllocateVirtualMemory"),
+    Bind<&MmAllocatePhysicalMemoryEx>(XboxLibrary::XboxKrnl, "MmAllocatePhysicalMemoryEx"),
 };
 
 std::span<const Export> MemoryExports() {

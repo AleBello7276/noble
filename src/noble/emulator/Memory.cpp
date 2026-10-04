@@ -141,6 +141,52 @@ GuestAddress Memory::AllocateVirtual(size_t size, size_t alignment, GuestHeapKin
     return static_cast<GuestAddress>(guest);
 }
 
+GuestAddress Memory::AllocatePhysical(size_t size, size_t alignment, GuestHeapKind kind, uint32_t minimum,
+                                      uint32_t maximum, MemoryProtection protection) {
+    if (kind != GuestHeapKind::Physical4K && kind != GuestHeapKind::Physical64K
+        && kind != GuestHeapKind::Physical16M)
+        return 0;
+
+    const Heap& heap = HeapFor(kind);
+    const uint64_t physicalSize = heap.end - heap.begin;
+    if (!size || size > physicalSize || minimum > maximum || minimum >= physicalSize
+        || alignment > kXboxMemorySize)
+        return 0;
+
+    const uint64_t roundedSize = AlignUp(size, heap.page_size);
+    const uint64_t roundedAlignment = AlignUp(std::max<uint64_t>(alignment, heap.page_size), heap.page_size);
+    const uint64_t upper = std::min<uint64_t>(uint64_t(maximum) + 1, physicalSize);
+    if (roundedSize > upper - minimum)
+        return 0;
+
+    const Heap range{heap.begin + minimum, heap.begin + upper, heap.page_size};
+    std::scoped_lock lock(mutex_);
+    if (!mMemoryBase_)
+        return 0;
+
+    const uint64_t backing = FindFreeLocked(range, roundedSize, roundedAlignment, true);
+    if (backing == kXboxMemorySize)
+        return 0;
+
+    const auto guest = static_cast<GuestAddress>(heap.begin + backing);
+    auto [allocation, inserted] = allocations_.emplace(
+        backing, Allocation{roundedSize, guest, std::vector<uint8_t>(roundedSize / 4096)});
+    if (!inserted)
+        return 0;
+
+    try {
+        if (!CommitLocked(backing, allocation->second, 0, roundedSize, protection)) {
+            allocations_.erase(allocation);
+            return 0;
+        }
+    } catch (...) {
+        allocations_.erase(allocation);
+        throw;
+    }
+
+    return guest;
+}
+
 bool Memory::AllocateFixed(GuestAddress address, size_t size) {
     const Heap* heap = HeapAt(address);
 
@@ -231,7 +277,7 @@ uint64_t Memory::FindFreeLocked(const Heap& heap, uint64_t size, uint64_t alignm
     const uint64_t begin = BackingAddress(heap.begin);
     const uint64_t end = begin + heap.end - heap.begin;
 
-    uint64_t cursor = begin == 0 ? heap.page_size : begin;
+    uint64_t cursor = heap.begin == 0 ? heap.page_size : begin;
     uint64_t selected = kXboxMemorySize;
 
     const auto gap = [&](uint64_t limit) {

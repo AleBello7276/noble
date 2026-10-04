@@ -5,12 +5,23 @@
 
 namespace hle::krnl {
 
-// return whether the executable permits the requested system flag bit
+void ExRegisterTitleTerminateNotification(Kernel& kernel,
+                                          Pointer<const TitleTerminateRegistration> registration,
+                                          uint32_t create) {
+    const GuestAddress routine = registration->notificationRoutine;
+    if (create)
+        kernel.RegisterTitleTerminateNotification(routine, registration->priority);
+    else
+        kernel.RemoveTitleTerminateNotification(routine);
+}
+
 uint32_t XexCheckExecutablePrivilege(Kernel& kernel, uint32_t privilege) {
     return kernel.CheckExecutablePrivilege(privilege);
 }
 
 constexpr std::array exports{
+    Bind<&ExRegisterTitleTerminateNotification>(XboxLibrary::XboxKrnl,
+                                                "ExRegisterTitleTerminateNotification"),
     Bind<&XexCheckExecutablePrivilege>(XboxLibrary::XboxKrnl, "XexCheckExecutablePrivilege"),
 };
 

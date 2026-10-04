@@ -9,6 +9,7 @@
 
 #include "KProcess.h"
 #include "KThread.h"
+#include "gpu/GPUBackend.h"
 #include "hle/Shims.h"
 #include <mutex>
 #include <thread>
@@ -41,7 +42,7 @@ struct ThreadCreateInfo {
 
 class Kernel {
 public:
-    Kernel(Memory& memory, Scheduler& scheduler);
+    Kernel(Memory& memory, Scheduler& scheduler, std::unique_ptr<GPUBackend> gpu = {});
 
     bool Initialize();
     void Shutdown();
@@ -68,6 +69,30 @@ public:
 
     KThread* CurrentThread();
     KProcess* CurrentProcess();
+
+    struct TitleTerminateNotification {
+        GuestAddress routine;
+        uint32_t priority;
+    };
+
+    // retain a guest callback and priority for future title termination delivery
+    void RegisterTitleTerminateNotification(GuestAddress routine, uint32_t priority);
+    // remove the first registration for this guest callback if present
+    void RemoveTitleTerminateNotification(GuestAddress routine);
+    // copy registrations in insertion order without retaining the notification mutex
+    std::vector<TitleTerminateNotification> GetTitleTerminateNotifications() const;
+
+    using GraphicsInterruptCallback = GPUBackend::InterruptCallback;
+
+    // expose the graphics backend owned by this kernel with null graphics as the default
+    GPUBackend& GPU() { return *gpu_; }
+    const GPUBackend& GPU() const { return *gpu_; }
+
+    // replace the graphics interrupt callback and its opaque guest argument as one registration
+    // a zero routine disables callback delivery
+    void SetGraphicsInterruptCallback(GuestAddress routine, GuestAddress userData);
+    // copy the callback and argument together for future guest interrupt delivery
+    GraphicsInterruptCallback GetGraphicsInterruptCallback() const;
 
     // expose the import registry whose lifetime covers compiled hle wrappers
     hle::Registry& Imports() { return imports_; }
@@ -106,6 +131,7 @@ private:
 private:
     Memory& memory_;
     Scheduler& scheduler_;
+    std::unique_ptr<GPUBackend> gpu_;
     hle::Registry imports_;
     GuestAddress executableModule_ = 0;
     GuestAddress executableHeader_ = 0;
@@ -117,6 +143,8 @@ private:
     std::mutex threadObjectsMutex_;
     std::mutex tlsMutex_;
     std::mutex criticalSectionMutex_;
+    mutable std::mutex titleTerminateMutex_;
+    std::vector<TitleTerminateNotification> titleTerminateNotifications_;
     std::unordered_map<GuestAddress, std::deque<KThread*>> criticalSectionWaiters_;
 
     uint32_t next_process_id_ = 1;
