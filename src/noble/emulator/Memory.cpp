@@ -70,13 +70,18 @@ bool Memory::Initialise() {
     if (mMemoryBase_)
         return true;
 
-    // try the preferred base first
+    // physical windows share the low 512 mb backing through host page mappings
+    static constexpr std::array<HostMemoryView, 5> views{{
+        {0x00000000, 0x00000000, 0xA0000000},
+        {0xA0000000, 0x00000000, 0x20000000},
+        {0xC0000000, 0x00000000, 0x20000000},
+        {0xE0000000, 0x00000000, 0x1FD00000},
+        {0xFFD00000, 0xFFD00000, 0x00300000},
+    }};
     constexpr uintptr_t preferred = 0x100000000ull;
     mMemoryBase_
-        = static_cast<uint8_t*>(Hostallocator_->Reserve(reinterpret_cast<void*>(preferred), kXboxMemorySize));
-
-    if (!mMemoryBase_)
-        mMemoryBase_ = static_cast<uint8_t*>(Hostallocator_->Reserve(nullptr, kXboxMemorySize));
+        = static_cast<uint8_t*>(Hostallocator_->ReserveAliased(reinterpret_cast<void*>(preferred),
+                                                              kXboxMemorySize, views));
 
     if (!mMemoryBase_) {
         LOG_FATAL("Unable to reserve guest address space");

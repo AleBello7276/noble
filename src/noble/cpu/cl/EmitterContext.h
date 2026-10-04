@@ -165,6 +165,9 @@ public:
     CraneliftJIT* backend;
 
 private:
+    // add the zero extended guest address to the host mapping base
+    cranelift::Value memory_address(cranelift::Value ea);
+
     struct CachedValue {
         cranelift::Value value = cranelift::INVALID_ID;
         bool dirty = false;

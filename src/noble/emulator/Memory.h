@@ -32,7 +32,7 @@ public:
     /* reserve the 4 GB host address range used to back guest memory */
     bool Initialise();
 
-    /* get the host reservation base, physical aliases must use Translate */
+    /* get the host mapping base with physical aliases mapped to shared storage */
     void* GetMemoryBase() const { return mMemoryBase_; }
 
     /* allocate guest pages in the selected heap; return 0 on failure */
