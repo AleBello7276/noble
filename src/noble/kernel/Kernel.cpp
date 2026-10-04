@@ -369,6 +369,7 @@ void Kernel::InitializeThreadContext(KThread& thread, const ThreadCreateInfo& in
 
     thread.mAffinityMask = info.affinity_mask;
     thread.mPriority = info.priority;
+    thread.mBasePriority = info.priority;
     thread.mState = ThreadState::Created;
 }
 
@@ -549,6 +550,10 @@ void Kernel::FreeGuestThread(KThread& thread) {
     thread.guestPCR_ = nullptr;
     thread.guestAddress_ = thread.pcrAddress_ = thread.tlsAllocation_ = thread.tls_address = 0;
     thread.mStackLimit = thread.mStackBase = 0;
+}
+
+int32_t Kernel::SetBasePriorityThread(KThread* thread, int32_t increment) {
+    return scheduler_.SetBasePriorityThread(thread, increment);
 }
 
 void Kernel::StartThread(KThread* thread) {

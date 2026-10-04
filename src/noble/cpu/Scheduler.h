@@ -38,6 +38,9 @@ public:
     void WaitForThread(KThread* thread);
     void TerminateThread(KThread* thread, uint32_t exitCode);
 
+    // set the base priority relative to the process and return the previous increment
+    int32_t SetBasePriorityThread(KThread* thread, int32_t increment);
+
     // prepare a guest wait before its current worker returns to the scheduler
     bool PrepareWait(KThread* thread);
 

@@ -80,6 +80,7 @@ public:
 
     ThreadAffinity mAffinityMask = kAllProcessors;
     ThreadPriority mPriority = 0;
+    ThreadPriority mBasePriority = 0;
 
     HWT_ID mCurrentProcessor = kInvalidProcessor;
     HWT_ID mLastProcessor = kInvalidProcessor;
@@ -95,6 +96,7 @@ public:
 private:
     friend class Kernel;
     friend class KProcess;
+    friend class Scheduler;
     ThreadID id_;
     Handle handle_ = 0;
     KProcess* handleProcess_ = nullptr;

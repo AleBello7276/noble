@@ -58,6 +58,7 @@ public:
 private:
     friend class Kernel;
     friend class KThread;
+    friend class Scheduler;
 
     // detach a terminated thread while preserving its guest object until kernel shutdown
     void DetachGuestThread(KThread& thread);

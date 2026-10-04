@@ -107,18 +107,51 @@ KThread* Scheduler::PickNextThreadLocked(HWT_ID processor_id) {
 
     */
 
+    auto selected = ready_queue_.end();
     for (auto it = ready_queue_.begin(); it != ready_queue_.end(); ++it) {
         KThread* thread = *it;
 
         if (thread->mState != ThreadState::Ready || !(thread->mAffinityMask & processor_bit))
             continue;
 
-        ready_queue_.erase(it);
-
-        return thread;
+        if (selected == ready_queue_.end() || thread->mPriority > (*selected)->mPriority)
+            selected = it;
     }
 
-    return nullptr;
+    if (selected == ready_queue_.end())
+        return nullptr;
+
+    KThread* thread = *selected;
+    ready_queue_.erase(selected);
+    return thread;
+}
+
+int32_t Scheduler::SetBasePriorityThread(KThread* thread, int32_t increment) {
+    std::scoped_lock lock(mutex_);
+
+    if (!thread || !thread->guestThread_ || !thread->process() || !thread->process()->guestProcess_)
+        return 0;
+
+    if (thread->process()->type() == ProcessType::Idle)
+        return 0;
+
+    auto& record = *thread->guestThread_;
+    const int32_t processBase = thread->process()->guestProcess_->defaultPriority;
+    const int32_t previous = record.saturationIncrement == 0xFF ? -16 :
+                             record.saturationIncrement         ? 16 :
+                                                                  thread->mBasePriority - processBase;
+    const bool realtime = processBase >= 16;
+    const auto priority = static_cast<int32_t>(
+        std::clamp<int64_t>(int64_t(processBase) + increment, realtime ? 16 : 1, realtime ? 31 : 15));
+
+    thread->mBasePriority = thread->mPriority = priority;
+    record.basePriority = record.basePriorityCopy = record.priority = static_cast<uint8_t>(priority);
+    record.saturationIncrement = increment <= -16 ? 0xFF : increment >= 16 ? 1 : 0;
+    record.priorityDecrement = 0;
+
+    // the next scheduling decision observes the new priority without changing thread state
+    cv_.notify_all();
+    return previous;
 }
 
 void Scheduler::WorkerMain(HWT_ID processor_id, std::stop_token stop_token) {

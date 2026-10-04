@@ -118,6 +118,15 @@ uint32_t ExCreateThread(Kernel& kernel, Memory& memory, KThread& caller,
     }
 }
 
+int32_t KeSetBasePriorityThread(Kernel& kernel, GuestAddress thread_address, int32_t increment) {
+    auto* thread = dynamic_cast<KThread*>(kernel.LookupGuestObject(thread_address));
+    if (!thread) {
+        LOG_WARN("KeSetBasePriorityThread received an invalid thread 0x{:08X}", thread_address);
+        return 0;
+    }
+    return kernel.SetBasePriorityThread(thread, increment);
+}
+
 constexpr std::array exports{
     Bind<&KeGetCurrentProcessType>(XboxLibrary::XboxKrnl, "KeGetCurrentProcessType"),
     Bind<&KeTlsAlloc>(XboxLibrary::XboxKrnl, "KeTlsAlloc"),
@@ -129,6 +138,7 @@ constexpr std::array exports{
     Bind<&KiApcNormalRoutineNop>(XboxLibrary::XboxKrnl, "KiApcNormalRoutineNop_"),
     Bind<&KeInitializeDpc>(XboxLibrary::XboxKrnl, "KeInitializeDpc"),
     Bind<&ExCreateThread>(XboxLibrary::XboxKrnl, "ExCreateThread"),
+    Bind<&KeSetBasePriorityThread>(XboxLibrary::XboxKrnl, "KeSetBasePriorityThread"),
 };
 
 std::span<const Export> ThreadingExports() {

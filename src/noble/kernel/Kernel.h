@@ -43,6 +43,9 @@ public:
     KThread* CreateThread(KProcess* process, const ThreadCreateInfo& info);
     void StartThread(KThread* thread);
 
+    // update a guest thread base priority through the scheduler lock
+    int32_t SetBasePriorityThread(KThread* thread, int32_t increment);
+
     // create Process Main Thread
     KThread* CreateInitialThread(KProcess* process);
 
