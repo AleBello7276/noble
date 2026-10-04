@@ -27,6 +27,7 @@ inline constexpr auto emitter_dispatch_table = [] {
     table[to_underlying(PpcOpcode::Subf)] = &cl_subf_handler;
     table[to_underlying(PpcOpcode::Subfic)] = &cl_subfic_handler;
     table[to_underlying(PpcOpcode::Subfe)] = &cl_subfe_handler;
+    table[to_underlying(PpcOpcode::Subfc)] = &cl_subfc_handler;
     table[to_underlying(PpcOpcode::And)] = &cl_and__handler;
     table[to_underlying(PpcOpcode::Andc)] = &cl_andc_handler;
     table[to_underlying(PpcOpcode::Andi_)] = &cl_andi_handler;

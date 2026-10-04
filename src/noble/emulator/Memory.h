@@ -67,6 +67,8 @@ public:
     /* translate a mapped guest range to its host backing address */
     void* Translate(GuestAddress address, size_t size = 1) const;
 
+    uint32_t GetPhysicalAddress(GuestAddress address) const;
+
     /* typed version of Translate for guest pointers */
     template <typename T = uint8_t*>
     T GuestToHostVirtual(uint32_t address) const {
@@ -91,7 +93,7 @@ private:
     static const Heap& HeapFor(GuestHeapKind kind);
     static const Heap* HeapAt(uint64_t address);
 
-    /* map each physical address window to the same 512 MB backing range */
+    // map physical windows to backing storage with the 4 kb window starting at physical 0x1000
     static uint64_t BackingAddress(uint64_t address);
 
     /* commit a range while mutex_ is held */

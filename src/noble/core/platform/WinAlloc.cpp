@@ -11,8 +11,8 @@ void* WinAlloc::ReserveAliased(void* base, size_t size, std::span<const HostMemo
     SYSTEM_INFO info;
     GetSystemInfo(&info);
     for (const auto& view : views)
-        if (view.addressOffset % info.dwAllocationGranularity
-            || view.backingOffset % info.dwAllocationGranularity || view.size % info.dwPageSize)
+        if (view.addressOffset % info.dwPageSize || view.backingOffset % info.dwPageSize
+            || view.size % info.dwPageSize)
             return nullptr;
 
     std::vector<HostMemoryView> savedViews(views.begin(), views.end());
@@ -21,34 +21,51 @@ void* WinAlloc::ReserveAliased(void* base, size_t size, std::span<const HostMemo
     if (!mapping)
         return nullptr;
 
-    for (unsigned attempt = 0; attempt < 8; ++attempt) {
-        auto* candidate = static_cast<uint8_t*>(Reserve(attempt == 0 ? base : nullptr, size));
-        if (!candidate)
-            continue;
-
-        VirtualFree(candidate, 0, MEM_RELEASE);
-        size_t mapped = 0;
-        for (const auto& view : views) {
-            const auto address = MapViewOfFileEx(
-                mapping, FILE_MAP_READ | FILE_MAP_WRITE, DWORD(uint64_t(view.backingOffset) >> 32),
-                DWORD(view.backingOffset), view.size, candidate + view.addressOffset);
-            if (!address)
-                break;
-            ++mapped;
-        }
-
-        if (mapped == views.size()) {
-            mapping_ = mapping;
-            mappedBase_ = candidate;
-            mappedSize_ = size;
-            views_ = std::move(savedViews);
-            return candidate;
-        }
-
-        for (size_t i = 0; i < mapped; ++i)
-            UnmapViewOfFile(candidate + views[i].addressOffset);
+    const auto process = GetCurrentProcess();
+    auto* candidate = static_cast<uint8_t*>(
+        VirtualAlloc2(process, base, size, MEM_RESERVE | MEM_RESERVE_PLACEHOLDER, PAGE_NOACCESS, nullptr, 0));
+    if (!candidate && base)
+        candidate = static_cast<uint8_t*>(VirtualAlloc2(
+            process, nullptr, size, MEM_RESERVE | MEM_RESERVE_PLACEHOLDER, PAGE_NOACCESS, nullptr, 0));
+    if (!candidate) {
+        CloseHandle(mapping);
+        return nullptr;
     }
+
+    size_t mapped = 0;
+    bool split = false;
+    for (const auto& view : views) {
+        split = false;
+        if (view.addressOffset + view.size < size) {
+            // split the remaining reservation while retaining ownership of all its addresses
+            if (!VirtualFree(candidate + view.addressOffset, view.size,
+                             MEM_RELEASE | MEM_PRESERVE_PLACEHOLDER))
+                break;
+            split = true;
+        }
+        if (!MapViewOfFile3(mapping, process, candidate + view.addressOffset, view.backingOffset, view.size,
+                 MEM_REPLACE_PLACEHOLDER, PAGE_READWRITE, nullptr, 0))
+            break;
+        ++mapped;
+    }
+    if (mapped == views.size()) {
+        mapping_ = mapping;
+        mappedBase_ = candidate;
+        mappedSize_ = size;
+        views_ = std::move(savedViews);
+        return candidate;
+    }
+
+    // unwind mapped views and both parts of the last split after any failure
+    const DWORD error = GetLastError();
+    for (size_t i = 0; i < mapped; ++i)
+        UnmapViewOfFile(candidate + views[i].addressOffset);
+    const auto& pending = views[mapped];
+    VirtualFree(candidate + pending.addressOffset, 0, MEM_RELEASE);
+    if (split)
+        VirtualFree(candidate + pending.addressOffset + pending.size, 0, MEM_RELEASE);
     CloseHandle(mapping);
+    SetLastError(error);
     return nullptr;
 }
 

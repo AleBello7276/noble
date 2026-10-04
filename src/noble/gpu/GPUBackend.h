@@ -25,6 +25,18 @@ public:
         uint32_t meMicrocode = 0;
     };
 
+    struct RingBuffer {
+        uint32_t physicalAddress = 0;
+        // hardware size encoding with byte size equal to 1 << (sizeLog2 + 3)
+        uint32_t sizeLog2 = 0;
+    };
+
+    struct ReadPointerWriteBack {
+        // physical address zero disables writeback as in xenia
+        uint32_t physicalAddress = 0;
+        uint32_t blockSizeLog2 = 0;
+    };
+
     virtual ~GPUBackend() = default;
 
     // initialize the host backend before guest video imports may run
@@ -42,9 +54,21 @@ public:
     // stop the guest graphics engines while retaining the host backend
     virtual void ShutdownEngines() = 0;
 
+    // replace the primary ring buffer parameters and reset command processor read state
+    virtual void InitializeRingBuffer(const RingBuffer& parameters) = 0;
+
+    // register the physical read pointer destination and its hardware update block encoding
+    virtual void EnableReadPointerWriteBack(const ReadPointerWriteBack& parameters) = 0;
+
     // replace the guest interrupt callback and user data together
     virtual void SetInterruptCallback(uint32_t routine, uint32_t userData) = 0;
 
     // copy the registered callback for future interrupt delivery
     virtual InterruptCallback GetInterruptCallback() const = 0;
+
+    // retain the guest address supplied for the system command buffer gpu identifier
+    virtual void SetSystemCommandBufferGpuIdentifierAddress(uint32_t address) = 0;
+
+    // return the registered identifier address for future command buffer handling
+    virtual uint32_t GetSystemCommandBufferGpuIdentifierAddress() const = 0;
 };

@@ -144,9 +144,15 @@ uint32_t MmAllocatePhysicalMemoryEx(Memory& memory, uint32_t flags, uint32_t reg
     }
 }
 
+uint32_t MmGetPhysicalAddress(Memory& memory, GuestAddress address) {
+    const auto physical = memory.GetPhysicalAddress(address);
+    return physical == UINT32_MAX ? 0 : physical;
+}
+
 constexpr std::array exports{
     Bind<&NtAllocateVirtualMemory>(XboxLibrary::XboxKrnl, "NtAllocateVirtualMemory"),
     Bind<&MmAllocatePhysicalMemoryEx>(XboxLibrary::XboxKrnl, "MmAllocatePhysicalMemoryEx"),
+    Bind<&MmGetPhysicalAddress>(XboxLibrary::XboxKrnl, "MmGetPhysicalAddress"),
 };
 
 std::span<const Export> MemoryExports() {

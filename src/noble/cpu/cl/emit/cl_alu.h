@@ -161,6 +161,35 @@ CLHandler(subfe) {
         e_.record_cr(0, res);
 }
 
+CLHandler(subfc) {
+    const auto rd = info_.mInst.field_rd();
+    const auto ra = info_.mInst.field_ra();
+    const auto rb = info_.mInst.field_rb();
+    const auto oe = info_.mInst.field_oe();
+    const auto rc = info_.mInst.field_rc();
+
+    const Value ra_v = e_.load_gpr(ra);
+    const Value rb_v = e_.load_gpr(rb);
+
+    // RT = RB - RA
+    const Value result = e_.ins().isub(rb_v, ra_v);
+
+    e_.store_gpr(rd, result);
+
+    const Value ca
+        = e_.ins().icmp(IntCC::CL_INTCC_UNSIGNED_GREATER_THAN_OR_EQUAL, e_.reduce32(rb_v), e_.reduce32(ra_v));
+
+    e_.store_ca(ca);
+
+    if (oe) {
+        LOG_FATAL("subfc OE bit not implemented.");
+        assert(false);
+    }
+
+    if (rc)
+        e_.record_cr(0, result);
+}
+
 CLHandler(and_) {
     const auto rs = info_.mInst.field_rs();
     const auto ra = info_.mInst.field_ra();

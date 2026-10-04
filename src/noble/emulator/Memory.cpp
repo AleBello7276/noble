@@ -60,7 +60,7 @@ uint64_t Memory::BackingAddress(uint64_t address) {
         return address - 0xC0000000;
 
     if (address >= 0xE0000000 && address < 0xFFD00000)
-        return address - 0xE0000000;
+        return address - 0xE0000000 + 0x1000;
 
     return address;
 }
@@ -75,7 +75,7 @@ bool Memory::Initialise() {
         {0x00000000, 0x00000000, 0xA0000000},
         {0xA0000000, 0x00000000, 0x20000000},
         {0xC0000000, 0x00000000, 0x20000000},
-        {0xE0000000, 0x00000000, 0x1FD00000},
+        {0xE0000000, 0x00001000, 0x1FD00000},
         {0xFFD00000, 0xFFD00000, 0x00300000},
     }};
     constexpr uintptr_t preferred = 0x100000000ull;
@@ -154,17 +154,20 @@ GuestAddress Memory::AllocatePhysical(size_t size, size_t alignment, GuestHeapKi
 
     const Heap& heap = HeapFor(kind);
     const uint64_t physicalSize = heap.end - heap.begin;
-    if (!size || size > physicalSize || minimum > maximum || minimum >= physicalSize
+    const uint64_t physicalBegin = BackingAddress(heap.begin);
+    const uint64_t physicalEnd = physicalBegin + physicalSize;
+    if (!size || size > physicalSize || minimum > maximum || minimum >= physicalEnd
         || alignment > kXboxMemorySize)
         return 0;
 
     const uint64_t roundedSize = AlignUp(size, heap.page_size);
     const uint64_t roundedAlignment = AlignUp(std::max<uint64_t>(alignment, heap.page_size), heap.page_size);
-    const uint64_t upper = std::min<uint64_t>(uint64_t(maximum) + 1, physicalSize);
-    if (roundedSize > upper - minimum)
+    const uint64_t lower = std::max<uint64_t>(minimum, physicalBegin);
+    const uint64_t upper = std::min<uint64_t>(uint64_t(maximum) + 1, physicalEnd);
+    if (lower >= upper || roundedSize > upper - lower)
         return 0;
 
-    const Heap range{heap.begin + minimum, heap.begin + upper, heap.page_size};
+    const Heap range{heap.begin + lower - physicalBegin, heap.begin + upper - physicalBegin, heap.page_size};
     std::scoped_lock lock(mutex_);
     if (!mMemoryBase_)
         return 0;
@@ -173,7 +176,7 @@ GuestAddress Memory::AllocatePhysical(size_t size, size_t alignment, GuestHeapKi
     if (backing == kXboxMemorySize)
         return 0;
 
-    const auto guest = static_cast<GuestAddress>(heap.begin + backing);
+    const auto guest = static_cast<GuestAddress>(heap.begin + backing - physicalBegin);
     auto [allocation, inserted] = allocations_.emplace(
         backing, Allocation{roundedSize, guest, std::vector<uint8_t>(roundedSize / 4096)});
     if (!inserted)
@@ -266,6 +269,11 @@ bool Memory::IsAccessible(GuestAddress address, size_t size, bool write) const {
 
 void* Memory::Translate(uint32_t address, size_t size) const {
     return IsAccessible(address, size) ? mMemoryBase_ + BackingAddress(address) : nullptr;
+}
+
+uint32_t Memory::GetPhysicalAddress(GuestAddress address) const {
+    const uint64_t backing = BackingAddress(address);
+    return backing < 0x20000000 ? static_cast<uint32_t>(backing) : UINT32_MAX;
 }
 
 size_t Memory::VirtualPageSize(GuestAddress address) {
