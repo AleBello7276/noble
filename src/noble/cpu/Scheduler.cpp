@@ -1,12 +1,13 @@
 #include "Logger.h"
 #include "Scheduler.h"
+#include "diagnostics/TraceEvents.h"
 
 #include <algorithm>
 #include <assert.h>
 
 thread_local HardwareThread* gCurrentProcessor = nullptr;
 
-Scheduler::Scheduler(CpuExecutor& cpu) : cpu_(cpu) {
+Scheduler::Scheduler(CpuExecutor& cpu, diagnostics::TraceSink* trace) : cpu_(cpu), trace_(trace) {
     for (uint32_t i = 0; i < kProcessorCount; ++i) {
         processors_[i].id = i;
     }
@@ -94,6 +95,8 @@ void Scheduler::MakeRunnable(KThread* thread) {
         thread->mState = ThreadState::Ready;
         thread->SyncGuestState();
         ready_queue_.push_back(thread);
+
+        diagnostics::EmitThread(trace_, diagnostics::EventKind::ThreadReady, *thread);
     }
 
     // wake all threads
@@ -149,6 +152,8 @@ int32_t Scheduler::SetBasePriorityThread(KThread* thread, int32_t increment) {
     record.saturationIncrement = increment <= -16 ? 0xFF : increment >= 16 ? 1 : 0;
     record.priorityDecrement = 0;
 
+    diagnostics::EmitThread(trace_, diagnostics::EventKind::PriorityChanged, *thread);
+
     // the next scheduling decision observes the new priority without changing thread state
     cv_.notify_all();
     return previous;
@@ -182,8 +187,11 @@ void Scheduler::WorkerMain(HWT_ID processor_id, std::stop_token stop_token) {
             thread->mLastProcessor = thread->mCurrentProcessor;
             thread->mCurrentProcessor = processor_id;
             thread->SyncGuestState();
+
+            diagnostics::EmitThread(trace_, diagnostics::EventKind::ThreadScheduled, *thread);
         }
 
+        diagnostics::ScopedWorkerContext traceContext(thread->id(), processor_id);
         ExecutionResult result = cpu_.Execute(thread->mContext, thread->mTerminateRequested, stop_token);
 
         HandleExecutionResult(processor_id, thread, result);
@@ -219,6 +227,24 @@ void Scheduler::HandleExecutionResult(HWT_ID processor_id, KThread* thread, Exec
             ready_queue_.push_back(thread);
         }
         thread->SyncGuestState();
+
+        if (result.reason == ExecutionReason::Fault) {
+            diagnostics::Event event;
+            event.kind = diagnostics::EventKind::Fault;
+            event.thread = thread->id();
+            event.cpu = processor_id;
+            event.address = result.fault_address;
+
+            if (trace_)
+                trace_->Emit(event);
+        }
+
+        diagnostics::EmitThread(
+            trace_,
+            thread->mState == ThreadState::Terminated ? diagnostics::EventKind::ThreadTerminated :
+            thread->mState == ThreadState::Waiting    ? diagnostics::EventKind::ThreadWaiting :
+                                                        diagnostics::EventKind::ThreadReady,
+            *thread);
     }
 
     // notify all
@@ -246,6 +272,8 @@ bool Scheduler::WakeThread(KThread* thread) {
             thread->mState = ThreadState::Ready;
             thread->SyncGuestState();
             ready_queue_.push_back(thread);
+
+            diagnostics::EmitThread(trace_, diagnostics::EventKind::ThreadReady, *thread);
         }
         // a running worker handles an early wake when it processes the waiting result
     }
@@ -292,6 +320,8 @@ void Scheduler::TerminateThread(KThread* thread, uint32_t exitCode) {
             thread->mCurrentProcessor = kInvalidProcessor;
             thread->SyncGuestState();
             cv_.notify_all();
+
+            diagnostics::EmitThread(trace_, diagnostics::EventKind::ThreadTerminated, *thread);
             return;
         }
 
@@ -307,6 +337,8 @@ void Scheduler::TerminateThread(KThread* thread, uint32_t exitCode) {
             thread->SyncGuestState();
 
             cv_.notify_all();
+
+            diagnostics::EmitThread(trace_, diagnostics::EventKind::ThreadTerminated, *thread);
             return;
         }
 

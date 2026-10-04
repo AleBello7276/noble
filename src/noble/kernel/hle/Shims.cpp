@@ -2,10 +2,17 @@
 
 #include "Loader/table/ImportTable.h"
 #include "Logger.h"
+#include "diagnostics/TraceEvents.h"
 #include <cstring>
 #include <mutex>
 
 namespace hle {
+
+void Registry::TraceCall(const PPCContext& cpu, diagnostics::EventKind kind, uint32_t library,
+                         uint32_t ordinal, uint32_t address) noexcept {
+    if (trace_ && trace_->ExecutionEnabled())
+        diagnostics::EmitExecution(trace_, kind, cpu, address, ordinal, library);
+}
 
 namespace {
 
@@ -175,12 +182,13 @@ Registry::EntryPoint Registry::Resolve(XboxLibrary library, uint16_t ordinal) co
     return it != entries_.end() ? it->second : &MissingImport;
 }
 
-void Registry::MissingImport(Registry*, PPCContext* cpu, uint32_t library, uint32_t ordinal,
+void Registry::MissingImport(Registry* registry, PPCContext* cpu, uint32_t library, uint32_t ordinal,
                              uint32_t thunkAddress) noexcept {
     if (cpu->Fault != PPCFault::None)
         return;
 
     cpu->CIA = thunkAddress;
+    registry->TraceCall(*cpu, diagnostics::EventKind::HLEEntered, library, ordinal, thunkAddress);
     cpu->Fault = PPCFault::UnimplementedImport;
     cpu->FaultAddress = thunkAddress;
 

@@ -64,8 +64,7 @@ set(Kernel
 
 
 set(SRC
-    noble/noble.cpp
-    noble/Logger.h 
+    noble/Logger.h
 	
 
     ${Loader}
@@ -82,8 +81,10 @@ set(INCLUDE
 )
 
 
-include_directories(${INCLUDE})
-add_executable(noble ${CMAKE_CURRENT_SOURCE_DIR}/${SRC})
+add_library(noble_runtime STATIC ${SRC})
+target_include_directories(noble_runtime PUBLIC ${INCLUDE})
+add_executable(noble noble/noble.cpp)
+target_link_libraries(noble PRIVATE noble_runtime)
 
 
 # Rust 
@@ -132,7 +133,22 @@ add_custom_target(noble_ffi_build DEPENDS "${RUST_LIBRARY}")
 add_library(noble_ffi STATIC IMPORTED GLOBAL)
 set_target_properties(noble_ffi PROPERTIES IMPORTED_LOCATION "${RUST_LIBRARY}")
 add_dependencies(noble_ffi noble_ffi_build)
-target_link_libraries(noble PRIVATE noble_ffi)
+target_link_libraries(noble_runtime PUBLIC noble_ffi)
 if(WIN32)
-    target_link_libraries(noble PRIVATE ws2_32 ntdll userenv bcrypt onecore)
+    target_link_libraries(noble_runtime PUBLIC ws2_32 ntdll userenv bcrypt onecore)
+endif()
+
+add_library(noble_trace STATIC EXCLUDE_FROM_ALL noble/diagnostics/TraceStore.cpp)
+target_include_directories(noble_trace PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/noble)
+
+if(NOBLE_BUILD_TUI)
+    if(NOT EXISTS "${CMAKE_SOURCE_DIR}/third_party/ftxui/CMakeLists.txt")
+        message(FATAL_ERROR "FTXUI is missing, run git submodule update --init third_party/ftxui")
+    endif()
+    set(FTXUI_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(FTXUI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(FTXUI_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+    set(FTXUI_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+    add_subdirectory("${CMAKE_SOURCE_DIR}/third_party/ftxui" "${CMAKE_CURRENT_BINARY_DIR}/ftxui" EXCLUDE_FROM_ALL)
+    add_subdirectory(frontends/tui)
 endif()

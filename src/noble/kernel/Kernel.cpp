@@ -1,4 +1,5 @@
 #include "Kernel.h"
+#include "diagnostics/TraceEvents.h"
 
 #include "GuestModule.h"
 #include "KThread.h"
@@ -37,9 +38,10 @@ bool TLSAllocated(const GuestKernelProcess& process, uint32_t index, uint32_t li
 
 }  // namespace
 
-Kernel::Kernel(Memory& memory, Scheduler& scheduler, std::unique_ptr<GPUBackend> gpu)
-    : memory_(memory), scheduler_(scheduler), gpu_(gpu ? std::move(gpu) : std::make_unique<NullGPU>(memory)),
-      imports_(*this, memory) {}
+Kernel::Kernel(Memory& memory, Scheduler& scheduler, std::unique_ptr<GPUBackend> gpu,
+               diagnostics::TraceSink* trace)
+    : memory_(memory), scheduler_(scheduler), trace_(trace),
+      gpu_(gpu ? std::move(gpu) : std::make_unique<NullGPU>(memory)), imports_(*this, memory, trace) {}
 
 bool Kernel::Initialize() {
     if (timeStampTimer_.joinable())
@@ -413,6 +415,7 @@ KThread* Kernel::CreateThread(KProcess* process, const ThreadCreateInfo& info) {
 
         process->guestProcess_->threadCount = byte_swap(byte_swap(process->guestProcess_->threadCount) + 1);
         result->guestProcessEntryLinked_ = true;
+        diagnostics::EmitThread(trace_, diagnostics::EventKind::ThreadCreated, *result, info.entry_point);
 
         return result;
 

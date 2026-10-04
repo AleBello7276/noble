@@ -11,6 +11,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+option(NOBLE_BUILD_TUI "Build the optional FTXUI tracing frontend" OFF)
+
 
 
 add_subdirectory("src/")

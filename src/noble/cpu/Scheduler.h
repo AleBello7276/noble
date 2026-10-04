@@ -23,7 +23,7 @@ public:
     static constexpr size_t kProcessorCount = 6;
     static constexpr ThreadAffinity kAllProcessorsMask = 0x3F;
 
-    explicit Scheduler(CpuExecutor& cpu);
+    explicit Scheduler(CpuExecutor& cpu, diagnostics::TraceSink* trace = nullptr);
     ~Scheduler();
 
     bool Initialise();
@@ -68,4 +68,5 @@ private:
     bool started_ = false;
 
     CpuExecutor& cpu_;
+    diagnostics::TraceSink* trace_;
 };

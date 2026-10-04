@@ -1,8 +1,9 @@
+#pragma once
+
 #include <chrono>
 #include <format>
 #include <iostream>
 #include <mutex>
-
 
 #ifndef LOG_LEVEL
 #define LOG_LEVEL LogLevel::Trace
@@ -24,6 +25,14 @@ constexpr bool enabled(LogLevel level) {
 
 class Logger {
 public:
+    using Sink = void (*)(LogLevel, std::string_view, void*) noexcept;
+
+    static void SetSink(Sink sink, void* context = nullptr) {
+        std::lock_guard lock(mutex_);
+        sink_ = sink;
+        context_ = context;
+    }
+
     template <LogLevel Level, typename... Args>
     static void log(std::format_string<Args...> fmt, Args&&... args) {
         if constexpr (!enabled(Level))
@@ -32,6 +41,11 @@ public:
         std::lock_guard lock(mutex_);
 
         auto msg = std::format(fmt, std::forward<Args>(args)...);
+        if (sink_) {
+            sink_(Level, msg, context_);
+            return;
+        }
+
         std::cout << colorPrefix(Level) << msg << COL_RESET << "\n";
     }
 
@@ -55,6 +69,8 @@ private:
     }
 
     static inline std::mutex mutex_;
+    static inline Sink sink_ = nullptr;
+    static inline void* context_ = nullptr;
 };
 
 #define LOG_TRACE(...) Logger::log<LogLevel::Trace>(__VA_ARGS__)

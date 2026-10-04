@@ -8,6 +8,7 @@
 #include <stop_token>
 
 #include "JITBackend.h"
+#include "diagnostics/Trace.h"
 
 class Memory;
 
@@ -22,7 +23,7 @@ struct ExecutionResult {
 
 class CpuExecutor {
 public:
-    CpuExecutor(Memory& memory);
+    explicit CpuExecutor(Memory& memory, diagnostics::TraceSink* trace = nullptr);
 
     // execute from cia and follow nia until termination, shutdown or a guest fault
     ExecutionResult Execute(PPCContext& context, const std::atomic_bool& terminate, std::stop_token stop);
@@ -31,5 +32,6 @@ public:
 
 private:
     Memory& memory_;
+    diagnostics::TraceSink* trace_;
     std::unique_ptr<JITBackend> jit_;
 };

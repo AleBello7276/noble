@@ -3,12 +3,13 @@
 #include "Memory.h"
 
 #include "cpu/Scheduler.h"
+#include "diagnostics/Trace.h"
 #include "kernel/Kernel.h"
 #include <string>
 
 class Emulator {
 public:
-    Emulator();
+    explicit Emulator(diagnostics::TraceSink* trace = nullptr);
     ~Emulator();
 
     /* initliase the Emulator subsytems */
@@ -18,9 +19,14 @@ public:
 
     bool Run();
 
+    // stop scheduling guest work without freeing storage used by the execution caller
+    void RequestStop();
+
     void Shutdown();
 
 private:
+    std::atomic_bool stopRequested_ = false;
+    std::mutex executionStartMutex_;
     Memory mMemory_;
     CpuExecutor cpu_;
     Scheduler mScheduler_;

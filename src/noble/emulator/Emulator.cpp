@@ -2,7 +2,9 @@
 #include "Logger.h"
 #include <cstring>
 
-Emulator::Emulator() : mMemory_(), cpu_(mMemory_), mScheduler_(cpu_), mKernel_(mMemory_, mScheduler_) {
+Emulator::Emulator(diagnostics::TraceSink* trace)
+    : mMemory_(), cpu_(mMemory_, trace), mScheduler_(cpu_, trace),
+      mKernel_(mMemory_, mScheduler_, {}, trace) {
     cpu_.jit()->SetHLERegistry(&mKernel_.Imports());
 }
 
@@ -26,6 +28,8 @@ bool Emulator::Initialise() {
 bool Emulator::LoadTitle(std::string path) {
     if (mTitleProcess_)
         return false;
+
+    stopRequested_.store(false, std::memory_order_release);
 
     // load XEX or EXE
     mStartModule = PPCModule(path, false, false);
@@ -82,6 +86,9 @@ bool Emulator::Run() {
     if (!mInitialThread_)
         return false;
 
+    if (stopRequested_.load(std::memory_order_acquire))
+        return true;
+
     // register boot metadata and compile only the guest entry point
     try {
         cpu_.jit()->RegisterPPCModule(mStartModule);
@@ -98,7 +105,15 @@ bool Emulator::Run() {
         return false;
 
     // wake scheduler and wait for main thread to start
-    mScheduler_.Start();
+    {
+        std::lock_guard lock(executionStartMutex_);
+
+        if (stopRequested_.load(std::memory_order_acquire))
+            return true;
+
+        mScheduler_.Start();
+    }
+
     mScheduler_.WaitForThread(mInitialThread_);
 
     return !mInitialThread_->faulted;
@@ -115,4 +130,12 @@ void Emulator::Shutdown() {
 
     mTitleProcess_ = nullptr;
     mInitialThread_ = nullptr;
+}
+
+void Emulator::RequestStop() {
+    stopRequested_.store(true, std::memory_order_release);
+
+    std::lock_guard lock(executionStartMutex_);
+
+    mScheduler_.Stop();
 }

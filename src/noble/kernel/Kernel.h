@@ -20,7 +20,8 @@
 
 class Kernel {
 public:
-    Kernel(Memory& memory, Scheduler& scheduler, std::unique_ptr<GPUBackend> gpu = {});
+    Kernel(Memory& memory, Scheduler& scheduler, std::unique_ptr<GPUBackend> gpu = {},
+           diagnostics::TraceSink* trace = nullptr);
 
     bool Initialize();
     void Shutdown();
@@ -118,6 +119,7 @@ private:
 private:
     Memory& memory_;
     Scheduler& scheduler_;
+    diagnostics::TraceSink* trace_;
     std::unique_ptr<GPUBackend> gpu_;
     hle::Registry imports_;
     GuestAddress executableModule_ = 0;

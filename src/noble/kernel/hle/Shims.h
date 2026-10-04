@@ -3,6 +3,7 @@
 #include "GuestPointer.h"
 #include "Loader/ImageLoader.h"
 #include "cpu/PpcContext.h"
+#include "diagnostics/Trace.h"
 #include "emulator/Memory.h"
 #include <bit>
 #include <shared_mutex>
@@ -162,7 +163,8 @@ public:
     using Handler = void (*)(Context&);
     using EntryPoint = void (*)(Registry*, PPCContext*, uint32_t, uint32_t, uint32_t) noexcept;
 
-    Registry(Kernel& kernel, Memory& memory) : kernel_(kernel), memory_(memory) {}
+    Registry(Kernel& kernel, Memory& memory, diagnostics::TraceSink* trace = nullptr)
+        : kernel_(kernel), memory_(memory), trace_(trace) {}
     // release owned variable storage when the registry is destroyed
     ~Registry();
 
@@ -230,6 +232,7 @@ private:
             return;
 
         cpu->CIA = thunkAddress;
+        registry->TraceCall(*cpu, diagnostics::EventKind::HLEEntered, library, ordinal, thunkAddress);
 
         try {
             Context context(*cpu, registry->kernel_, registry->memory_);
@@ -242,6 +245,7 @@ private:
         } catch (...) {
             ReportFailure(*cpu, ordinal, thunkAddress, "unknown host exception");
         }
+        registry->TraceCall(*cpu, diagnostics::EventKind::HLEReturned, library, ordinal, thunkAddress);
     }
 
     // update registrations for future bindings without changing existing compiled wrappers
@@ -255,11 +259,16 @@ private:
     static void ReportFailure(PPCContext& cpu, uint32_t ordinal, uint32_t thunkAddress,
                               const char* message) noexcept;
 
+    // publish hle boundaries without exposing a frontend to compiled wrappers
+    void TraceCall(const PPCContext& cpu, diagnostics::EventKind kind, uint32_t library, uint32_t ordinal,
+                   uint32_t address) noexcept;
+
     // combine the library and ordinal into a unique registration key
     static uint64_t Key(XboxLibrary library, uint16_t ordinal) { return (uint64_t(library) << 32) | ordinal; }
 
     Kernel& kernel_;
     Memory& memory_;
+    diagnostics::TraceSink* trace_;
     mutable std::shared_mutex mutex_;
     std::unordered_map<uint64_t, EntryPoint> entries_;
     std::unordered_map<uint64_t, Variable> variables_;
