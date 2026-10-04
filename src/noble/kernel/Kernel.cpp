@@ -1,6 +1,7 @@
 #include "Kernel.h"
 
 #include "GuestModule.h"
+#include "KThread.h"
 #include "Loader/XEXImage.h"
 #include "Logger.h"
 #include "core/byte_swap.h"
@@ -250,6 +251,27 @@ bool Kernel::SetExecutableModule(const XLoader::IImage& image, std::string_view 
 
 KProcess* Kernel::CreateGuestProcess(const ProcessCreateInfo& info) {
     std::scoped_lock lock(threadObjectsMutex_);
+    return CreateGuestProcessLocked(info);
+}
+
+KProcess* Kernel::GetThreadProcess(bool system) {
+    std::scoped_lock lock(threadObjectsMutex_);
+
+    const auto type = system ? ProcessType::System : ProcessType::Title;
+    for (const auto& process : processes_)
+        if (process->type() == type)
+            return process.get();
+
+    if (!system)
+        return nullptr;
+
+    ProcessCreateInfo info;
+    info.type = ProcessType::System;
+
+    return CreateGuestProcessLocked(info);
+}
+
+KProcess* Kernel::CreateGuestProcessLocked(const ProcessCreateInfo& info) {
     auto process = std::make_unique<KProcess>(next_process_id_++, info.type);
 
     const GuestAddress address = memory_.AllocateVirtual(sizeof(GuestKernelProcess));
@@ -316,11 +338,15 @@ void Kernel::InitializeThreadContext(KThread& thread, const ThreadCreateInfo& in
     thread.mContext = {};
     thread.mContext.HostThread = &thread;
 
-    thread.mContext.CIA = info.entry_point;
+    thread.mContext.CIA = info.startup ? info.startup : info.entry_point;
+    thread.mContext.NIA = thread.mContext.CIA;
+    thread.mContext.SPRs.LR = KThread::kReturnAddress;
+    thread.mReturnValueIsExitCode = !info.startup;
 
     // initialize the guest stack, entry parameter and processor control region
-    thread.mContext.GPRs[1].u64 = thread.mStackBase;
-    thread.mContext.GPRs[3].u64 = info.parameter;
+    thread.mContext.GPRs[1].u64 = thread.mStackBase - 0x100;
+    thread.mContext.GPRs[3].u64 = info.startup ? info.entry_point : info.parameter;
+    thread.mContext.GPRs[4].u64 = info.startup ? info.parameter : 0;
     thread.mContext.GPRs[13].u64 = thread.pcrAddress_;
 
     thread.mAffinityMask = info.affinity_mask;
@@ -346,6 +372,9 @@ KThread* Kernel::CreateThread(KProcess* process, const ThreadCreateInfo& info) {
         thread->mState = info.create_suspended ? ThreadState::Suspended : ThreadState::Created;
         thread->suspend_count = info.create_suspended ? 1 : 0;
         thread->SyncGuestState();
+
+        thread->handleProcess_ = info.handle_process ? info.handle_process : process;
+        thread->handle_ = thread->handleProcess_->handles.Insert(thread.get());
 
         std::scoped_lock guestListLock(process->guestThreadsMutex_);
         auto& list = process->guestProcess_->threadList;
@@ -450,7 +479,7 @@ bool Kernel::InitializeGuestThread(KThread& thread, const ThreadCreateInfo& info
         + std::chrono::duration_cast<Units>(std::chrono::steady_clock::now() - clockStart_).count());
     record.threadID = byte_swap(thread.id());
     record.startAddress = byte_swap(info.entry_point);
-    record.creationFlags = byte_swap(uint32_t(info.create_suspended));
+    record.creationFlags = byte_swap(info.creation_flags | uint32_t(info.create_suspended));
 
     InitializeList(record.timerList, thread.guestAddress_ + offsetof(GuestKernelThread, timerList));
     InitializeList(record.reservedList, thread.guestAddress_ + offsetof(GuestKernelThread, reservedList));
@@ -488,9 +517,16 @@ bool Kernel::InitializeGuestThread(KThread& thread, const ThreadCreateInfo& info
 }
 
 void Kernel::FreeGuestThread(KThread& thread) {
-    for (auto address : {thread.mStackLimit, thread.guestAddress_, thread.pcrAddress_, thread.tlsAllocation_})
+    if (thread.handle_ && thread.handleProcess_)
+        thread.handleProcess_->handles.Remove(thread.handle_);
+
+    thread.handle_ = 0;
+    for (auto address :
+         {thread.mStackLimit, thread.guestAddress_, thread.pcrAddress_, thread.tlsAllocation_}) {
         if (address)
             memory_.FreeVirtual(address);
+    }
+
     thread.guestThread_ = nullptr;
     thread.guestPCR_ = nullptr;
     thread.guestAddress_ = thread.pcrAddress_ = thread.tlsAllocation_ = thread.tls_address = 0;
@@ -664,10 +700,9 @@ void Kernel::RegisterTitleTerminateNotification(GuestAddress routine, uint32_t p
 
 void Kernel::RemoveTitleTerminateNotification(GuestAddress routine) {
     std::lock_guard lock(titleTerminateMutex_);
-    const auto found = std::find_if(titleTerminateNotifications_.begin(), titleTerminateNotifications_.end(),
-                                    [routine](const auto& notification) {
-                                        return notification.routine == routine;
-                                    });
+    const auto found
+        = std::find_if(titleTerminateNotifications_.begin(), titleTerminateNotifications_.end(),
+                       [routine](const auto& notification) { return notification.routine == routine; });
     if (found != titleTerminateNotifications_.end())
         titleTerminateNotifications_.erase(found);
 }

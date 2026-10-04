@@ -13,13 +13,17 @@ using Handle = uint32_t;
 
 class HandleTable {
 public:
+    // retain an object under a new process handle
     Handle Insert(KernelObject* object);
 
+    // find an object while the owning process retains its lifetime
     KernelObject* Lookup(Handle handle);
 
+    // release a handle without destroying the process owned object
     void Remove(Handle handle);
 
 private:
+    std::mutex mutex_;
     Handle next_handle_ = 0x100;
 
     std::unordered_map<Handle, KernelObject*> objects_;

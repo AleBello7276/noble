@@ -2,6 +2,7 @@
 
 #include "Logger.h"
 #include "emulator/Memory.h"
+#include "kernel/KThread.h"
 #include <exception>
 
 #include "cl/CraneliftJIT.h"
@@ -19,6 +20,12 @@ ExecutionResult CpuExecutor::Execute(PPCContext& context, const std::atomic_bool
 
         // cia holds the entry to execute and nia receives the next dispatcher target
         const GuestAddress address = context.CIA;
+        if (context.HostThread && address == KThread::kReturnAddress) {
+            auto& thread = *context.HostThread;
+            thread.exit_code = thread.mReturnValueIsExitCode ? uint32_t(context.GPRs[3].u64) : 0;
+            return {ExecutionReason::Exited};
+        }
+
         if ((address & 3) != 0 || !memory_.IsMapped(address, 4)) {
             context.Fault = PPCFault::MemoryAccess;
             context.FaultAddress = address;

@@ -1,5 +1,9 @@
 #pragma once
 
+/*
+    many structs found here comes from Xenia emulator
+*/
+
 #include <chrono>
 #include <cstdint>
 #include <deque>
@@ -7,38 +11,12 @@
 #include <unordered_map>
 #include <vector>
 
-#include "KProcess.h"
-#include "KThread.h"
+#include "KernelTypes.h"
+#include "cpu/Scheduler.h"
 #include "gpu/GPUBackend.h"
 #include "hle/Shims.h"
 #include <mutex>
 #include <thread>
-
-namespace hle::krnl {
-struct TimeStampBundle;
-struct CriticalSection;
-}  // namespace hle::krnl
-
-class Memory;
-class Scheduler;
-
-struct ProcessCreateInfo {
-    GuestAddress image_base = 0;
-    GuestAddress entry_point = 0;
-    ProcessType type = ProcessType::Title;
-};
-
-struct ThreadCreateInfo {
-    GuestAddress entry_point = 0;
-    GuestAddress parameter = 0;
-
-    uint32_t stack_size = 512 * 1024;
-
-    uint8_t affinity_mask = kAllProcessors;
-    int32_t priority = 0;
-
-    bool create_suspended = false;
-};
 
 class Kernel {
 public:
@@ -48,6 +26,9 @@ public:
     void Shutdown();
 
     KProcess* CreateGuestProcess(const ProcessCreateInfo& info);
+
+    // find the title process or create the system process on its first thread request
+    KProcess* GetThreadProcess(bool system);
 
     // publish the executable guest loader record and retain its original xex header
     bool SetExecutableModule(const XLoader::IImage& image, std::string_view imagePath = {});
@@ -116,6 +97,7 @@ public:
     void LeaveCriticalSection(KThread& thread, hle::Pointer<hle::krnl::CriticalSection> section);
 
 private:
+    KProcess* CreateGuestProcessLocked(const ProcessCreateInfo& info);
     // refresh the shared timestamp record from the kernel clock origin
     void UpdateTimeStampBundle();
 

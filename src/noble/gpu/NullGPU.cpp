@@ -23,8 +23,10 @@ bool NullGPU::Initialize() {
     }
     registers[static_cast<uint32_t>(gpu::Register::RB_EDRAM_TIMING)] = 0x08100748;
     registers[static_cast<uint32_t>(gpu::Register::RB_BC_CONTROL)] = 0x0000200E;
+
     // report vblank for the null display
     registers[static_cast<uint32_t>(gpu::Register::D1MODE_VBLANK_VLINE_STATUS)] = 1;
+
     const auto mode = GetDisplayMode();
     registers[static_cast<uint32_t>(gpu::Register::D1MODE_VIEWPORT_SIZE)] = (mode.width << 16) | mode.height;
 
