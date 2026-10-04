@@ -439,6 +439,26 @@ CLHandler(slw) {
         e_.record_cr(0, result);
 }
 
+CLHandler(srw) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
+    const auto rb = info_.mInst.field_rb();
+    const auto rc = info_.mInst.field_rc();
+
+    const Value word = e_.reduce32(e_.load_gpr(rs));
+    const Value count = e_.reduce32(e_.load_gpr(rb));
+
+    const Value shifted = e_.ins().ushr(word, count);
+    const Value out_of_range = e_.ins().band_imm_u(count, 32);
+    const Value in_range = e_.ins().icmp_imm_u(IntCC::CL_INTCC_EQUAL, out_of_range, 0);
+    const Value result = e_.zext64(e_.ins().select(in_range, shifted, e_.i32(0)));
+
+    e_.store_gpr(ra, result);
+
+    if (rc)
+        e_.record_cr(0, result);
+}
+
 CLHandler(srawi) {
     const auto ra = info_.mInst.field_ra();
     const auto rs = info_.mInst.field_rs();

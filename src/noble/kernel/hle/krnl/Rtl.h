@@ -40,6 +40,8 @@ static_assert(offsetof(CriticalSection, owningThread) == 0x18);
 // build an unlocked guest critical section with a saturated spin count in units of 256
 CriticalSection MakeCriticalSection(uint32_t spinCount = 0);
 
+uint32_t RtlNtStatusToDosError(uint32_t status);
+
 // expose the typed runtime library implementations for kernel export registration
 std::span<const Export> RtlExports();
 

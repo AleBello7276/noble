@@ -44,37 +44,73 @@ CriticalSection MakeCriticalSection(uint32_t spinCount) {
     return section;
 }
 
-namespace {
 
-// initialize an unlocked guest critical section without consuming or returning a status value
+struct StatusError {
+    uint32_t status;
+    uint32_t error;
+};
+
+constexpr StatusError statusErrors[] = {
+#include "NtStatusToDosError.inc"
+};
+
+static_assert([] {
+    for (size_t i = 1; i < std::size(statusErrors); ++i)
+        if (statusErrors[i - 1].status >= statusErrors[i].status)
+            return false;
+    return true;
+}());
+
+
+
+uint32_t RtlNtStatusToDosError(uint32_t status) {
+    if (status == 0 || (status & 0x20000000) != 0)
+        return status;
+
+    if ((status >> 16) == 0x8007)
+        return status & 0xFFFF;
+
+    // remove the hresult nt facility bit before looking up the ntstatus
+    if ((status & 0xF0000000) == 0xD0000000)
+        status &= ~0x30000000u;
+
+    const auto* entry
+        = std::lower_bound(std::begin(statusErrors), std::end(statusErrors), status,
+                           [](const StatusError& entry, uint32_t value) { return entry.status < value; });
+    if (entry != std::end(statusErrors) && entry->status == status)
+        return entry->error;
+
+    if ((status >> 16) == 0xC001)
+        return status & 0xFFFF;
+
+    constexpr uint32_t errorMrMidNotFound = 317;
+    return errorMrMidNotFound;
+}
+
+
 void RtlInitializeCriticalSection(Pointer<CriticalSection> section) {
     *section = MakeCriticalSection();
 }
 
-// initialize an unlocked guest critical section with a rounded spin count and return success
 uint32_t RtlInitializeCriticalSectionAndSpinCount(Pointer<CriticalSection> section, uint32_t spinCount) {
     *section = MakeCriticalSection(spinCount);
     return 0;
 }
 
-// acquire the section recursively or return to the dispatcher with a prepared scheduler wait
 void RtlEnterCriticalSection(Kernel& kernel, KThread& thread, PPCContext& cpu,
                              Pointer<CriticalSection> section) {
     if (!kernel.EnterCriticalSection(thread, section))
         cpu.Action = HostAction::Wait;
 }
 
-// acquire an available section without blocking and report whether acquisition succeeded
 uint32_t RtlTryEnterCriticalSection(Kernel& kernel, KThread& thread, Pointer<CriticalSection> section) {
     return kernel.EnterCriticalSection(thread, section, true);
 }
 
-// release one recursive acquisition and wake the next waiter on the final release
 void RtlLeaveCriticalSection(Kernel& kernel, KThread& thread, Pointer<CriticalSection> section) {
     kernel.LeaveCriticalSection(thread, section);
 }
 
-// find an optional xex header field and return its inline value or guest storage address
 uint32_t RtlImageXexHeaderField(Memory& memory, Pointer<const XexHeader> header, uint32_t field) {
     if (!header)
         return 0;
@@ -131,9 +167,9 @@ constexpr std::array exports{
     Bind<&RtlInitializeCriticalSectionAndSpinCount>(XboxLibrary::XboxKrnl,
                                                     "RtlInitializeCriticalSectionAndSpinCount"),
     Bind<&RtlImageXexHeaderField>(XboxLibrary::XboxKrnl, "RtlImageXexHeaderField"),
+    Bind<&RtlNtStatusToDosError>(XboxLibrary::XboxKrnl, "RtlNtStatusToDosError"),
 };
 
-}  // namespace
 
 std::span<const Export> RtlExports() {
     return exports;

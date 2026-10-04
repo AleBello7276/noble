@@ -43,6 +43,7 @@ inline constexpr auto emitter_dispatch_table = [] {
     table[to_underlying(PpcOpcode::Cmpl)] = &cl_cmpl_handler;
     table[to_underlying(PpcOpcode::Extsb)] = &cl_extsb_handler;
     table[to_underlying(PpcOpcode::Cntlzw)] = &cl_cntlzw_handler;
+    table[to_underlying(PpcOpcode::Srw)] = &cl_srw_handler;
     table[to_underlying(PpcOpcode::Srawi)] = &cl_srawi_handler;
     table[to_underlying(PpcOpcode::Slw)] = &cl_slw_handler;
     table[to_underlying(PpcOpcode::Rlwinm)] = &cl_rlwinm_handler;
