@@ -248,8 +248,8 @@ CLHandler(lwarx) {
 
     const Value raw = e_.load_memory(ea, types::I32());
 
-    e_.ins().store(e_.builder.memflags_new(), ea, e_.vCpuState, ReserveAddressOffset());
-    e_.ins().store(e_.builder.memflags_new(), e_.zext64(raw), e_.vCpuState, ReserveValueOffset());
+    e_.ins().store(e_.builder.memflags_new(), e_.reduce32(ea), e_.vCpuState, ReserveAddressOffset());
+    e_.ins().store(e_.builder.memflags_new(), raw, e_.vCpuState, ReserveValueOffset());
     e_.ins().store(e_.builder.memflags_new(), e_.i8(1), e_.vCpuState, ReserveValidOffset());
 
     e_.store_gpr(rt, e_.zext64(e_.ins().bswap(raw)));
@@ -261,6 +261,10 @@ CLHandler(stwcx) {
     const auto ra = info_.mInst.field_ra();
     const auto rb = info_.mInst.field_rb();
 
+    // test
+    // e_.ins().store(e_.builder.memflags_new(), e_.i32(info_.mAddress), e_.vCpuState,
+    //               static_cast<std::int32_t>(offsetof(PPCContext, CIA)));
+
     const Value base = ra ? e_.load_gpr(ra) : e_.i64(0);
     const Value ea = e_.reduce32(e_.ins().iadd(base, e_.load_gpr(rb)));
     const Value guest_addr = e_.zext64(ea);
@@ -270,11 +274,11 @@ CLHandler(stwcx) {
         = e_.ins().load(types::I8(), e_.builder.memflags_new(), e_.vCpuState, ReserveValidOffset());
 
     const Value reserve_addr
-        = e_.ins().load(types::I64(), e_.builder.memflags_new(), e_.vCpuState, ReserveAddressOffset());
+        = e_.ins().load(types::I32(), e_.builder.memflags_new(), e_.vCpuState, ReserveAddressOffset());
 
     e_.ins().store(e_.builder.memflags_new(), e_.i8(0), e_.vCpuState, ReserveValidOffset());
 
-    const Value address_matches = e_.ins().icmp(IntCC::CL_INTCC_EQUAL, guest_addr, reserve_addr);
+    const Value address_matches = e_.ins().icmp(IntCC::CL_INTCC_EQUAL, ea, reserve_addr);
     const Value can_store = e_.ins().band(reserve_valid, address_matches);
 
     const Block try_store = e_.builder.create_block();
@@ -285,10 +289,8 @@ CLHandler(stwcx) {
 
     e_.SwitchToBlock(try_store);
 
-    const Value expected64
-        = e_.ins().load(types::I64(), e_.builder.memflags_new(), e_.vCpuState, ReserveValueOffset());
-
-    const Value expected = e_.reduce32(expected64);
+    const Value expected
+        = e_.ins().load(types::I32(), e_.builder.memflags_new(), e_.vCpuState, ReserveValueOffset());
     const Value value = e_.reduce32(e_.load_gpr(rs));
     const Value desired = e_.ins().bswap(value);
 
