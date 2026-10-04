@@ -80,4 +80,5 @@ private:
 
 public:
     cranelift::FuncId host_yield_id;
+    cranelift::FuncId host_load_clock_id;
 };

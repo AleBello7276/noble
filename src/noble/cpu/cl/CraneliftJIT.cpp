@@ -1,5 +1,6 @@
 #include "CraneliftJIT.h"
 
+#include "core/HostClock.h"
 #include "powerpc-rs.h"
 #include <algorithm>
 #include <assert.h>
@@ -12,7 +13,12 @@
 
 // TODO: move this
 static void host_yield() {
+    LOG_FATAL("Unhandled yield.");
     assert(false);
+}
+
+static uint64_t host_load_clock() {
+    return HostClock::GetInstance().GetGuestTickCount();
 }
 
 CraneliftJIT::CraneliftJIT(Memory& memory) : memory_(memory), jit_module_(nullptr) {
@@ -20,12 +26,18 @@ CraneliftJIT::CraneliftJIT(Memory& memory) : memory_(memory), jit_module_(nullpt
 
     assert(jit_builder_);
     jit_builder_.symbol("host_yield", host_yield);
+    jit_builder_.symbol("host_load_clock", host_load_clock);
 
     jit_module_ = cranelift::JITModule(std::move(jit_builder_));
 
     auto yield_sig = jit_module_.make_signature();
     host_yield_id
         = jit_module_.declare_function("host_yield", cranelift::Linkage::CL_LINKAGE_IMPORT, yield_sig);
+
+    auto clock_sig = jit_module_.make_signature();
+    clock_sig.push_return(cranelift::types::I64());
+    host_load_clock_id
+        = jit_module_.declare_function("host_load_clock", cranelift::Linkage::CL_LINKAGE_IMPORT, clock_sig);
 }
 
 void CraneliftJIT::RegisterPPCModule(const PPCModule& module) {

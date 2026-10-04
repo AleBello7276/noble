@@ -1,3 +1,4 @@
+#include "CraneliftJIT.h"
 #include "EmitterContext.h"
 #include "emit/cl_util.h"
 
@@ -5,6 +6,13 @@
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
+
+cranelift::Value EmitterContext::load_clock() {
+    auto func_ref = builder.declare_func_in_func(jit, backend->host_load_clock_id);
+
+    const cranelift::Inst call = ins().call(func_ref);
+    return builder.inst_result(call, 0);
+}
 
 cranelift::Value EmitterContext::load_gpr(size_t index) {
     if (index >= PPCContext::GPR_COUNT)
@@ -358,4 +366,16 @@ cranelift::Value EmitterContext::load_fpscr() {
 
 void EmitterContext::store_fpscr(Value value) {
     ins().store(builder.memflags_new(), value, vCpuState, static_cast<int32_t>(offsetof(PPCContext, FPSCR)));
+}
+
+void EmitterContext::copy_fpscr_to_cr1() {
+    const Value fpscr = load_fpscr();
+
+    const Value fx = ins().band_imm_u(ins().ushr_imm_u(fpscr, 31), 1);
+    const Value fex = ins().ishl_imm_u(ins().band_imm_u(ins().ushr_imm_u(fpscr, 30), 1), 8);
+    const Value vx = ins().ishl_imm_u(ins().band_imm_u(ins().ushr_imm_u(fpscr, 29), 1), 16);
+    const Value ox = ins().ishl_imm_u(ins().band_imm_u(ins().ushr_imm_u(fpscr, 28), 1), 24);
+    const Value cr1 = ins().bor(ins().bor(fx, fex), ins().bor(vx, ox));
+
+    ins().store(builder.memflags_new(), cr1, vCpuState, CRFieldBitOffset(1));
 }

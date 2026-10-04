@@ -123,6 +123,9 @@ public:
 
     void store_fpscr(cranelift::Value value);
     cranelift::Value load_fpscr();
+    void copy_fpscr_to_cr1();
+
+    cranelift::Value load_clock();
 
 public:
     PPCFuncMap mFuncRanges;

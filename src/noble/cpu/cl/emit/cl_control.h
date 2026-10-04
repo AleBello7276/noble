@@ -258,3 +258,16 @@ CLHandler(twi) {
     //
     // e_.emit_trap_if(trap);
 }
+
+CLHandler(mftb) {
+    const auto rd = info_.mInst.field_rd();
+    const auto tbr = info_.mInst.field_tbr();
+
+    Value time = e_.load_clock();
+
+    if (tbr == 269) {
+        time = e_.ins().ushr_imm_u(time, 32);
+    }
+
+    e_.store_gpr(rd, time);
+}
