@@ -26,6 +26,24 @@ void VdQueryVideoMode(Kernel& kernel, Pointer<VideoMode> videoMode) {
     QueryVideoMode(kernel, *videoMode);
 }
 
+// write the initial display gamma defaults as big endian guest values
+// type 2 selects bt709 and the power is only used when type 3 is selected
+void VdGetCurrentDisplayGamma(Pointer<be<uint32_t>> type, Pointer<be<float>> power) {
+    *type = 2;
+    *power = 2.22222233f;
+}
+
+// return video flags with bit 0 for widescreen and bits 1 and 2 for widths of at least 1280 and 1920
+uint32_t VdQueryVideoFlags(Kernel& kernel) {
+    const auto mode = kernel.GPU().GetDisplayMode();
+    uint32_t flags = mode.widescreen ? 1u : 0u;
+    if (mode.width >= 1280)
+        flags |= 2u;
+    if (mode.width >= 1920)
+        flags |= 4u;
+    return flags;
+}
+
 // pass the opaque guest engine parameters to the selected graphics backend
 uint32_t VdInitializeEngines(Kernel& kernel, uint32_t unknown, GuestAddress callback,
                              GuestAddress callbackArgument, GuestAddress pfpMicrocode,
@@ -80,8 +98,19 @@ void VdSetSystemCommandBufferGpuIdentifierAddress(Kernel& kernel, GuestAddress a
     kernel.GPU().SetSystemCommandBufferGpuIdentifierAddress(address);
 }
 
+// TODO:
+// return success until graphics notification registration and guest callback delivery are implemented
+// notification is normally 1 and arguments is an opaque guest address for scaling parameters
+uint32_t VdCallGraphicsNotificationRoutines([[maybe_unused]] uint32_t notification,
+                                            [[maybe_unused]] GuestAddress arguments) {
+    return 0;
+}
+
 constexpr std::array exports{
     Bind<&VdQueryVideoMode>(XboxLibrary::XboxKrnl, "VdQueryVideoMode"),
+    Bind<&VdGetCurrentDisplayGamma>(XboxLibrary::XboxKrnl, "VdGetCurrentDisplayGamma"),
+    Bind<&VdQueryVideoFlags>(XboxLibrary::XboxKrnl, "VdQueryVideoFlags"),
+    Bind<&VdCallGraphicsNotificationRoutines>(XboxLibrary::XboxKrnl, "VdCallGraphicsNotificationRoutines"),
     Bind<&VdInitializeEngines>(XboxLibrary::XboxKrnl, "VdInitializeEngines"),
     Bind<&VdInitializeRingBuffer>(XboxLibrary::XboxKrnl, "VdInitializeRingBuffer"),
     Bind<&VdEnableRingBufferRPtrWriteBack>(XboxLibrary::XboxKrnl, "VdEnableRingBufferRPtrWriteBack"),

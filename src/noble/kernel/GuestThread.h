@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/endian.h"
 #include <cstddef>
 #include <cstdint>
 
@@ -72,7 +73,9 @@ struct GuestKernelThread {
     GuestListEntry readyEntry;
     uint32_t msrMask, waitResult;
     uint8_t waitIRQL, processorMode, waitNext, waitReason;
-    uint32_t waitBlocks, reservedAC, apcDisableCount, quantum;
+    uint32_t waitBlocks, reservedAC;
+    be<int32_t> apcDisableCount;
+    uint32_t quantum;
     uint8_t saturationIncrement, basePriority, priorityDecrement, boostDisabled;
     uint8_t suspendCount, preempted, terminated, currentCPU;
     uint32_t prcb, alternatePRCB;
@@ -141,6 +144,7 @@ static_assert(sizeof(GuestKernelThread) == 0xAB0);
 static_assert(offsetof(GuestKernelThread, stackBase) == 0x5C);
 static_assert(offsetof(GuestKernelThread, tlsAddress) == 0x68);
 static_assert(offsetof(GuestKernelThread, process) == 0x84);
+static_assert(offsetof(GuestKernelThread, apcDisableCount) == 0xB0);
 static_assert(offsetof(GuestKernelThread, suspendCount) == 0xBC);
 static_assert(offsetof(GuestKernelThread, processEntry) == 0x110);
 static_assert(offsetof(GuestKernelThread, threadID) == 0x14C);

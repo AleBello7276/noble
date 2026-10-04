@@ -2,6 +2,19 @@
 
 #include "core/byte_swap.h"
 #include <chrono>
+#include <stdexcept>
+
+void KThread::EnterCriticalRegion() {
+    if (!guestThread_)
+        throw std::runtime_error("guest thread has no kthread record");
+    --guestThread_->apcDisableCount;
+}
+
+void KThread::LeaveCriticalRegion() {
+    if (!guestThread_)
+        throw std::runtime_error("guest thread has no kthread record");
+    ++guestThread_->apcDisableCount;
+}
 
 void KThread::SyncGuestState() {
     if (!guestThread_)

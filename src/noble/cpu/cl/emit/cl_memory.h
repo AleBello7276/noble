@@ -319,3 +319,15 @@ CLHandler(stwcx) {
 
     e_.ins().fence();
 }
+
+CLHandler(eieio) {
+    e_.ins().fence();
+}
+
+CLHandler(sync) {
+    e_.ins().fence();
+}
+
+CLHandler(isync) {
+    e_.ins().nop();
+}

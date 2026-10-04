@@ -416,6 +416,19 @@ CLHandler(extsb) {
         e_.record_cr(0, res);
 }
 
+CLHandler(extsw) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
+    const auto rc = info_.mInst.field_rc();
+
+    const Value res = e_.sext64(e_.reduce32(e_.load_gpr(rs)));
+
+    e_.store_gpr(ra, res);
+
+    if (rc)
+        e_.record_cr(0, res);
+}
+
 CLHandler(cntlzw) {
     const auto ra = info_.mInst.field_ra();
     const auto rs = info_.mInst.field_rs();
@@ -466,6 +479,28 @@ CLHandler(srw) {
     const Value out_of_range = e_.ins().band_imm_u(count, 32);
     const Value in_range = e_.ins().icmp_imm_u(IntCC::CL_INTCC_EQUAL, out_of_range, 0);
     const Value result = e_.zext64(e_.ins().select(in_range, shifted, e_.i32(0)));
+
+    e_.store_gpr(ra, result);
+
+    if (rc)
+        e_.record_cr(0, result);
+}
+
+CLHandler(srd) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
+    const auto rb = info_.mInst.field_rb();
+    const auto rc = info_.mInst.field_rc();
+
+    const Value source = e_.load_gpr(rs);
+    const Value count = e_.ins().ireduce(types::I8(), e_.load_gpr(rb));
+    const Value sh = e_.ins().band_imm_u(count, 0x7F);
+
+    const Value shifted = e_.ins().ushr(source, sh);
+    const Value out_of_range = e_.ins().band_imm_u(sh, 0x40);
+    const Value in_range = e_.ins().icmp_imm_u(IntCC::CL_INTCC_EQUAL, out_of_range, 0);
+
+    const Value result = e_.ins().select(in_range, shifted, e_.i64(0));
 
     e_.store_gpr(ra, result);
 
@@ -618,6 +653,35 @@ CLHandler(rldicl) {
         e_.record_cr(0, result);
 }
 
+CLHandler(rldicr) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
+    const auto rc = info_.mInst.field_rc();
+    const auto sh = info_.mInst.field_sh();
+    const auto me = info_.mInst.field_mb();
+
+    const uint64_t mask = PPCMASK(0, me);
+    const Value source = e_.load_gpr(rs);
+
+    const Value result = [&]() -> Value {
+        // sldi RA,RS,n
+        if (me == 63 - sh)
+            return sh ? e_.ins().ishl_imm_u(source, sh) : source;
+
+        if (sh == 0)
+            return mask == UINT64_MAX ? source : e_.ins().band(source, e_.i64(mask));
+
+        const Value rotated = e_.ins().rotl_imm_u(source, sh);
+
+        return mask == UINT64_MAX ? rotated : e_.ins().band(rotated, e_.i64(mask));
+    }();
+
+    e_.store_gpr(ra, result);
+
+    if (rc)
+        e_.record_cr(0, result);
+}
+
 CLHandler(divwu) {
     const auto oe = info_.mInst.field_oe();
     const auto rc = info_.mInst.field_rc();
@@ -726,6 +790,26 @@ CLHandler(xor_) {
         e_.record_cr(0, res);
 }
 
+CLHandler(xori) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
+    const auto uimm = info_.mInst.field_uimm();
+
+    const Value res = e_.ins().bxor(e_.load_gpr(rs), e_.i64(zero_extend<16>(uimm)));
+
+    e_.store_gpr(ra, res);
+}
+
+CLHandler(xoris) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
+    const auto uimm = info_.mInst.field_uimm();
+
+    const Value res = e_.ins().bxor(e_.load_gpr(rs), e_.i64(zero_extend<16>(uimm) << 16));
+
+    e_.store_gpr(ra, res);
+}
+
 CLHandler(nor) {
     const auto ra = info_.mInst.field_ra();
     const auto rs = info_.mInst.field_rs();
@@ -744,6 +828,20 @@ CLHandler(nor) {
         const Value rbV = e_.load_gpr(rb);
         res = e_.ins().bnot(e_.ins().bor(rsV, rbV));
     }
+
+    e_.store_gpr(ra, res);
+
+    if (rc)
+        e_.record_cr(0, res);
+}
+
+CLHandler(eqv) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
+    const auto rb = info_.mInst.field_rb();
+    const auto rc = info_.mInst.field_rc();
+
+    const Value res = e_.ins().bnot(e_.ins().bxor(e_.load_gpr(rs), e_.load_gpr(rb)));
 
     e_.store_gpr(ra, res);
 

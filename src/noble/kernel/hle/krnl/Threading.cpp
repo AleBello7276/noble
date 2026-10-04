@@ -46,6 +46,14 @@ uint32_t KeQueryPerformanceFrequency() {
 
 void KiApcNormalRoutineNop() {}
 
+void KeEnterCriticalRegion(KThread& thread) {
+    thread.EnterCriticalRegion();
+}
+
+void KeLeaveCriticalRegion(KThread& thread) {
+    thread.LeaveCriticalRegion();
+}
+
 void KeInitializeDpc(Pointer<XDPC> dpc, GuestAddress routine, GuestAddress context) {
     dpc->Initialize(routine, context);
 }
@@ -152,6 +160,8 @@ int32_t KeSetBasePriorityThread(Kernel& kernel, GuestAddress thread_address, int
 
 constexpr std::array exports{
     Bind<&KeGetCurrentProcessType>(XboxLibrary::XboxKrnl, "KeGetCurrentProcessType"),
+    Bind<&KeEnterCriticalRegion>(XboxLibrary::XboxKrnl, "KeEnterCriticalRegion"),
+    Bind<&KeLeaveCriticalRegion>(XboxLibrary::XboxKrnl, "KeLeaveCriticalRegion"),
     Bind<&KeTlsAlloc>(XboxLibrary::XboxKrnl, "KeTlsAlloc"),
     Bind<&KeTlsFree>(XboxLibrary::XboxKrnl, "KeTlsFree"),
     Bind<&KeTlsGetValue>(XboxLibrary::XboxKrnl, "KeTlsGetValue"),

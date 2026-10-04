@@ -439,3 +439,31 @@ CLHandler(frsp) {
     e_.store_fpr(frt, res);
     e_.update_fpscr(rc);
 }
+
+CLHandler(fmsub) {
+    const auto frt = info_.mInst.field_frd();
+    const auto fra = info_.mInst.field_fra();
+    const auto frb = info_.mInst.field_frb();
+    const auto frc = info_.mInst.field_frc();
+    const auto rc = info_.mInst.field_rc();
+
+    const Value res = e_.ins().fma(e_.load_fpr(fra), e_.load_fpr(frc), e_.ins().fneg(e_.load_fpr(frb)));
+
+    e_.store_fpr(frt, res);
+    e_.update_fpscr(rc);
+}
+
+CLHandler(fmsubs) {
+    const auto frt = info_.mInst.field_frd();
+    const auto fra = info_.mInst.field_fra();
+    const auto frb = info_.mInst.field_frb();
+    const auto frc = info_.mInst.field_frc();
+    const auto rc = info_.mInst.field_rc();
+
+    Value res = e_.ins().fma(e_.load_fpr(fra), e_.load_fpr(frc), e_.ins().fneg(e_.load_fpr(frb)));
+
+    res = e_.to_single(res);
+
+    e_.store_fpr(frt, res);
+    e_.update_fpscr(rc);
+}

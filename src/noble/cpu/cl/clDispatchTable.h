@@ -43,8 +43,10 @@ inline constexpr auto emitter_dispatch_table = [] {
     table[to_underlying(PpcOpcode::Cmpli)] = &cl_cmpli_handler;
     table[to_underlying(PpcOpcode::Cmpl)] = &cl_cmpl_handler;
     table[to_underlying(PpcOpcode::Extsb)] = &cl_extsb_handler;
+    table[to_underlying(PpcOpcode::Extsw)] = &cl_extsw_handler;
     table[to_underlying(PpcOpcode::Cntlzw)] = &cl_cntlzw_handler;
     table[to_underlying(PpcOpcode::Srw)] = &cl_srw_handler;
+    table[to_underlying(PpcOpcode::Srd)] = &cl_srd_handler;
     table[to_underlying(PpcOpcode::Srawi)] = &cl_srawi_handler;
     table[to_underlying(PpcOpcode::Slw)] = &cl_slw_handler;
     table[to_underlying(PpcOpcode::Rlwinm)] = &cl_rlwinm_handler;
@@ -53,9 +55,13 @@ inline constexpr auto emitter_dispatch_table = [] {
     table[to_underlying(PpcOpcode::Mullw)] = &cl_mullw_handler;
     table[to_underlying(PpcOpcode::Mulli)] = &cl_mulli_handler;
     table[to_underlying(PpcOpcode::Xor)] = &cl_xor__handler;
+    table[to_underlying(PpcOpcode::Xori)] = &cl_xori_handler;
+    table[to_underlying(PpcOpcode::Xoris)] = &cl_xoris_handler;
     table[to_underlying(PpcOpcode::Nor)] = &cl_nor_handler;
     table[to_underlying(PpcOpcode::Rldicl)] = &cl_rldicl_handler;
+    table[to_underlying(PpcOpcode::Rldicr)] = &cl_rldicr_handler;
     table[to_underlying(PpcOpcode::Neg)] = &cl_neg_handler;
+    table[to_underlying(PpcOpcode::Eqv)] = &cl_eqv_handler;
 
     table[to_underlying(PpcOpcode::Fmul)] = &cl_fmul_handler;
     table[to_underlying(PpcOpcode::Fmuls)] = &cl_fmuls_handler;
@@ -83,6 +89,8 @@ inline constexpr auto emitter_dispatch_table = [] {
     table[to_underlying(PpcOpcode::Fctiw)] = &cl_fctiw_handler;
     table[to_underlying(PpcOpcode::Fctiwz)] = &cl_fctiwz_handler;
     table[to_underlying(PpcOpcode::Frsp)] = &cl_frsp_handler;
+    table[to_underlying(PpcOpcode::Fmsub)] = &cl_fmsub_handler;
+    table[to_underlying(PpcOpcode::Fmsubs)] = &cl_fmsubs_handler;
 
     table[to_underlying(PpcOpcode::Dcbt)] = &cl_dcbt_handler;
     table[to_underlying(PpcOpcode::Dcbtst)] = &cl_dcbtst_handler;
@@ -150,6 +158,10 @@ inline constexpr auto emitter_dispatch_table = [] {
     table[to_underlying(PpcOpcode::Lwarx)] = &cl_lwarx_handler;
     table[to_underlying(PpcOpcode::Stwcx_)] = &cl_stwcx_handler;
     table[to_underlying(PpcOpcode::Stfiwx)] = &cl_stfiwx_handler;
+
+    table[to_underlying(PpcOpcode::Eieio)] = &cl_eieio_handler;
+    table[to_underlying(PpcOpcode::Sync)] = &cl_sync_handler;
+    table[to_underlying(PpcOpcode::Isync)] = &cl_isync_handler;
 
     return table;
 }();

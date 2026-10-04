@@ -70,6 +70,11 @@ public:
     // publish scheduler state while holding the scheduler mutex
     void SyncGuestState();
 
+    // decrement the guest apc disable count to enter a nested critical region
+    void EnterCriticalRegion();
+    // increment the guest apc disable count to leave one level of a critical region
+    void LeaveCriticalRegion();
+
 public:
     PPCContext mContext{};
     GuestAddress mStackBase = 0;
