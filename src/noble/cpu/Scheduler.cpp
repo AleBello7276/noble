@@ -5,6 +5,46 @@
 #include <algorithm>
 #include <assert.h>
 
+// evnetually move this stuff under a platform agnostic abstraction
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#elif defined(__linux__) || defined(__APPLE__)
+#include <pthread.h>
+#endif
+
+
+void NameWorkerThread(HWT_ID processor_id) {
+#if defined(_WIN32)
+
+    const auto name = std::format(L"noble CPU {}", processor_id);
+    const HRESULT result = SetThreadDescription(GetCurrentThread(), name.c_str());
+    if (FAILED(result))
+        LOG_WARN("failed to name CPU {} worker: 0x{:08X}", processor_id, uint32_t(result));
+
+#elif defined(__linux__) || defined(__APPLE__)
+
+    const auto name = std::format("noble CPU {}", processor_id);
+
+#if defined(__APPLE__)
+
+    const int result = pthread_setname_np(name.c_str());
+
+#else
+
+    const int result = pthread_setname_np(pthread_self(), name.c_str());
+
+#endif
+
+    if (result != 0)
+        LOG_WARN("failed to name CPU {} worker: {}", processor_id, result);
+
+#endif
+}
+
 thread_local HardwareThread* gCurrentProcessor = nullptr;
 
 Scheduler::Scheduler(CpuExecutor& cpu, diagnostics::TraceSink* trace) : cpu_(cpu), trace_(trace) {
@@ -160,6 +200,7 @@ int32_t Scheduler::SetBasePriorityThread(KThread* thread, int32_t increment) {
 }
 
 void Scheduler::WorkerMain(HWT_ID processor_id, std::stop_token stop_token) {
+    NameWorkerThread(processor_id);
     HardwareThread& processor = processors_[processor_id];
     gCurrentProcessor = &processor;
 
