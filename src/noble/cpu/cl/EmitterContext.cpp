@@ -379,3 +379,11 @@ void EmitterContext::copy_fpscr_to_cr1() {
 
     ins().store(builder.memflags_new(), cr1, vCpuState, CRFieldBitOffset(1));
 }
+
+cranelift::Value EmitterContext::load_msr() {
+    return ins().load(types::I64(), builder.memflags_new(), vCpuState, offsetof(PPCContext, MSR));
+}
+
+void EmitterContext::store_msr(cranelift::Value value) {
+    ins().store(builder.memflags_new(), value, vCpuState, offsetof(PPCContext, MSR));
+}

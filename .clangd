@@ -1,2 +1,2 @@
 CompileFlags:
-  CompilationDatabase: out/build/clang-relwithdebug
+  CompilationDatabase: out/build/clang-relwithdebinfo

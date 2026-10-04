@@ -11,6 +11,8 @@
 // Link Register
 typedef uint64_t LR_t;
 
+typedef uint64_t MSR_t;
+
 // Count Register
 typedef uint64_t CTR_t;
 
@@ -220,6 +222,11 @@ struct PPCContext {
     uint32_t NIA = 0;
     SPRState SPRs;
     FPSCRr FPSCR;
+    MSR_t MSR;
+
+    uint32_t reserve_address;
+    uint32_t reserve_value;
+    uint8_t reserve_valid;
 
     // retain host execution metadata outside the guest architectural register file
     KThread* HostThread = nullptr;

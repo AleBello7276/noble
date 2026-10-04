@@ -190,6 +190,29 @@ CLHandler(subfc) {
         e_.record_cr(0, result);
 }
 
+CLHandler(neg) {
+    const auto oe = info_.mInst.field_oe();
+    const auto rc = info_.mInst.field_rc();
+    const auto rd = info_.mInst.field_rd();
+    const auto ra = info_.mInst.field_ra();
+
+    const Value source = e_.load_gpr(ra);
+
+    // RT <- ~RA + 1
+    const Value result = e_.ins().ineg(source);
+    e_.store_gpr(rd, result);
+
+    // TODO: handle OV
+    if (oe) {
+        LOG_FATAL("neg OE bit not implemented.");
+        throw std::runtime_error("neg OE bit not implemented.");
+        assert(false);
+    }
+
+    if (rc)
+        e_.record_cr(0, result);
+}
+
 CLHandler(and_) {
     const auto rs = info_.mInst.field_rs();
     const auto ra = info_.mInst.field_ra();

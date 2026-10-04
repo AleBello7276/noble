@@ -93,6 +93,21 @@ typedef enum ClFloatCC {
 
 typedef enum ClEndianness { CL_ENDIANNESS_LITTLE = 0, CL_ENDIANNESS_BIG = 1 } ClEndianness;
 
+// operation applied to memory by atomic_rmw which always returns the old value
+typedef enum ClAtomicRmwOp {
+    CL_ATOMIC_RMW_ADD = 0,
+    CL_ATOMIC_RMW_SUB = 1,
+    CL_ATOMIC_RMW_AND = 2,
+    CL_ATOMIC_RMW_NAND = 3,
+    CL_ATOMIC_RMW_OR = 4,
+    CL_ATOMIC_RMW_XOR = 5,
+    CL_ATOMIC_RMW_XCHG = 6,
+    CL_ATOMIC_RMW_UMIN = 7,
+    CL_ATOMIC_RMW_UMAX = 8,
+    CL_ATOMIC_RMW_SMIN = 9,
+    CL_ATOMIC_RMW_SMAX = 10
+} ClAtomicRmwOp;
+
 typedef enum ClCallConv {
     CL_CALL_CONV_FAST = 0,
     CL_CALL_CONV_TAIL = 1,
@@ -412,6 +427,19 @@ ClValue cl_ins_load(ClFunctionBuilder* builder, ClType type, ClMemFlags flags, C
                     int32_t offset);
 ClInst cl_ins_store(ClFunctionBuilder* builder, ClMemFlags flags, ClValue value, ClValue address,
                     int32_t offset);
+
+// emit a sequentially consistent fence that orders all loads and stores across it
+ClInst cl_ins_fence(ClFunctionBuilder* builder);
+// atomically load an integer with sequentially consistent ordering
+ClValue cl_ins_atomic_load(ClFunctionBuilder* builder, ClType type, ClMemFlags flags, ClValue address);
+// atomically store an integer with sequentially consistent ordering
+ClInst cl_ins_atomic_store(ClFunctionBuilder* builder, ClMemFlags flags, ClValue value, ClValue address);
+// atomically apply an operation and return the old integer with sequentially consistent ordering
+ClValue cl_ins_atomic_rmw(ClFunctionBuilder* builder, ClType type, ClMemFlags flags, uint32_t operation,
+                         ClValue address, ClValue value);
+// store replacement if memory equals expected and return the old integer whether or not it matched
+ClValue cl_ins_atomic_cas(ClFunctionBuilder* builder, ClMemFlags flags, ClValue address,
+                         ClValue expected, ClValue replacement);
 
 #ifdef __cplusplus
 }

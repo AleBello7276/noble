@@ -17,6 +17,9 @@ inline constexpr auto emitter_dispatch_table = [] {
     table[to_underlying(PpcOpcode::Bcctr)] = &cl_bcctr_handler;
     table[to_underlying(PpcOpcode::Twi)] = &cl_twi_handler;
     table[to_underlying(PpcOpcode::Mftb)] = &cl_mftb_handler;
+    table[to_underlying(PpcOpcode::Mfmsr)] = &cl_mfmsr_handler;
+    table[to_underlying(PpcOpcode::Mtmsr)] = &cl_mtmsr_handler;
+    table[to_underlying(PpcOpcode::Mtmsrd)] = &cl_mtmsrd_handler;
 
     table[to_underlying(PpcOpcode::Add)] = &cl_add_handler;
     table[to_underlying(PpcOpcode::Addze)] = &cl_addze_handler;
@@ -50,6 +53,7 @@ inline constexpr auto emitter_dispatch_table = [] {
     table[to_underlying(PpcOpcode::Xor)] = &cl_xor__handler;
     table[to_underlying(PpcOpcode::Nor)] = &cl_nor_handler;
     table[to_underlying(PpcOpcode::Rldicl)] = &cl_rldicl_handler;
+    table[to_underlying(PpcOpcode::Neg)] = &cl_neg_handler;
 
     table[to_underlying(PpcOpcode::Fmul)] = &cl_fmul_handler;
     table[to_underlying(PpcOpcode::Fmuls)] = &cl_fmuls_handler;
@@ -140,6 +144,10 @@ inline constexpr auto emitter_dispatch_table = [] {
     table[to_underlying(PpcOpcode::Stfdu)] = &cl_stfdu_handler;
     table[to_underlying(PpcOpcode::Stfdx)] = &cl_stfdx_handler;
     table[to_underlying(PpcOpcode::Stfdux)] = &cl_stfdux_handler;
+
+    table[to_underlying(PpcOpcode::Lwarx)] = &cl_lwarx_handler;
+    table[to_underlying(PpcOpcode::Stwcx_)] = &cl_stwcx_handler;
+    table[to_underlying(PpcOpcode::Stfiwx)] = &cl_stfiwx_handler;
 
     return table;
 }();

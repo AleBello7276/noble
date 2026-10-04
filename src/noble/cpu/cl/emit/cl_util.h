@@ -33,6 +33,11 @@ constexpr std::int32_t GetXER_CA_Offset() {
     return static_cast<std::int32_t>(SPROffset(offsetof(SPRState, XER)) + offsetof(XERr, CA));
 }
 
+constexpr std::int32_t GetXER_SO_Offset() {
+    return static_cast<std::int32_t>(
+        SPROffset(offsetof(SPRState, XER)) + offsetof(XERr, SO));
+}
+
 // TODO: template this
 inline Value add_did_carry_imm32(EmitterContext& e_, Value lhs, uint32_t rhs) {
     return e_.ins().icmp_imm_u(IntCC::CL_INTCC_UNSIGNED_GREATER_THAN, e_.ins().ireduce(types::I32(), lhs),
@@ -467,4 +472,17 @@ inline Value fctid_convert(EmitterContext& e_, Value src, Value rounded) {
 
     // FCTID stores the integer BIT PATTERN in the FPR
     return e_.ins().bitcast(types::F64(), MemFlags{}, integer);
+}
+
+
+constexpr std::int32_t ReserveAddressOffset() {
+    return static_cast<std::int32_t>(offsetof(PPCContext, reserve_address));
+}
+
+constexpr std::int32_t ReserveValueOffset() {
+    return static_cast<std::int32_t>(offsetof(PPCContext, reserve_value));
+}
+
+constexpr std::int32_t ReserveValidOffset() {
+    return static_cast<std::int32_t>(offsetof(PPCContext, reserve_valid));
 }

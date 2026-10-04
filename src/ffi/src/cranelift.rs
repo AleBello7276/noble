@@ -7,7 +7,7 @@ use std::ptr;
 use std::num::NonZeroU8;
 
 use cranelift_codegen::entity::EntityRef;
-use cranelift_codegen::ir::{condcodes::{FloatCC, IntCC}, types, AbiParam, Block, BlockArg, Endianness, FuncRef, GlobalValue, Inst, InstBuilder, MemFlags, MemFlagsData, SigRef, Signature, Type, Value};
+use cranelift_codegen::ir::{condcodes::{FloatCC, IntCC}, types, AbiParam, AtomicRmwOp, Block, BlockArg, Endianness, FuncRef, GlobalValue, Inst, InstBuilder, MemFlags, MemFlagsData, SigRef, Signature, Type, Value};
 use cranelift_codegen::isa::{self, OwnedTargetIsa};
 use cranelift_codegen::{settings, Context};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
@@ -15,6 +15,18 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{default_libcall_names, DataDescription, DataId, FuncId, Linkage, Module};
 
 const INVALID: u32 = u32::MAX;
+
+fn atomic_rmw_op(value: u32) -> Option<AtomicRmwOp> {
+    Some(match value {
+        0 => AtomicRmwOp::Add, 1 => AtomicRmwOp::Sub,
+        2 => AtomicRmwOp::And, 3 => AtomicRmwOp::Nand,
+        4 => AtomicRmwOp::Or, 5 => AtomicRmwOp::Xor,
+        6 => AtomicRmwOp::Xchg, 7 => AtomicRmwOp::Umin,
+        8 => AtomicRmwOp::Umax, 9 => AtomicRmwOp::Smin,
+        10 => AtomicRmwOp::Smax,
+        _ => { error("invalid AtomicRmwOp"); return None }
+    })
+}
 
 // decode a nonzero raw trap code without panicking across the c abi
 fn trapcode(code: u8) -> Option<cranelift_codegen::ir::TrapCode> {
@@ -1001,4 +1013,46 @@ pub unsafe extern "C" fn cl_ins_store(builder: *mut FunctionBuilder<'static>, fl
     let builder = &mut *builder;
     let flags = builder.func.dfg.mem_flags[flags];
     builder.ins().store(flags, Value::from_u32(value), Value::from_u32(address), offset).as_u32()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn cl_ins_fence(builder: *mut FunctionBuilder<'static>) -> u32 {
+    (&mut *builder).ins().fence().as_u32()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn cl_ins_atomic_load(builder: *mut FunctionBuilder<'static>, value_type: u16, flags: u32, address: u32) -> u32 {
+    let Some(flags) = MemFlags::with_number(flags) else { error("invalid MemFlags"); return INVALID };
+    let builder = &mut *builder;
+    if !builder.func.dfg.mem_flags.is_valid(flags) { error("unknown MemFlags"); return INVALID }
+    let flags = builder.func.dfg.mem_flags[flags];
+    builder.ins().atomic_load(ty(value_type), flags, Value::from_u32(address)).as_u32()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn cl_ins_atomic_store(builder: *mut FunctionBuilder<'static>, flags: u32, value: u32, address: u32) -> u32 {
+    let Some(flags) = MemFlags::with_number(flags) else { error("invalid MemFlags"); return INVALID };
+    let builder = &mut *builder;
+    if !builder.func.dfg.mem_flags.is_valid(flags) { error("unknown MemFlags"); return INVALID }
+    let flags = builder.func.dfg.mem_flags[flags];
+    builder.ins().atomic_store(flags, Value::from_u32(value), Value::from_u32(address)).as_u32()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn cl_ins_atomic_rmw(builder: *mut FunctionBuilder<'static>, value_type: u16, flags: u32, operation: u32, address: u32, value: u32) -> u32 {
+    let Some(operation) = atomic_rmw_op(operation) else { return INVALID };
+    let Some(flags) = MemFlags::with_number(flags) else { error("invalid MemFlags"); return INVALID };
+    let builder = &mut *builder;
+    if !builder.func.dfg.mem_flags.is_valid(flags) { error("unknown MemFlags"); return INVALID }
+    let flags = builder.func.dfg.mem_flags[flags];
+    builder.ins().atomic_rmw(ty(value_type), flags, operation, Value::from_u32(address), Value::from_u32(value)).as_u32()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn cl_ins_atomic_cas(builder: *mut FunctionBuilder<'static>, flags: u32, address: u32, expected: u32, replacement: u32) -> u32 {
+    let Some(flags) = MemFlags::with_number(flags) else { error("invalid MemFlags"); return INVALID };
+    let builder = &mut *builder;
+    if !builder.func.dfg.mem_flags.is_valid(flags) { error("unknown MemFlags"); return INVALID }
+    let flags = builder.func.dfg.mem_flags[flags];
+    builder.ins().atomic_cas(flags, Value::from_u32(address), Value::from_u32(expected), Value::from_u32(replacement)).as_u32()
 }

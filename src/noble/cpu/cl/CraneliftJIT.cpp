@@ -14,6 +14,7 @@
 // TODO: move this
 static void host_yield() {
     LOG_FATAL("Unhandled yield.");
+    throw std::runtime_error("Unhandled yield.");
     assert(false);
 }
 

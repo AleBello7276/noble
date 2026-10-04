@@ -271,3 +271,47 @@ CLHandler(mftb) {
 
     e_.store_gpr(rd, time);
 }
+
+CLHandler(mfmsr) {
+    const auto rt = info_.mInst.field_rd();
+    const Value msr = e_.load_msr();
+
+    e_.store_gpr(rt, msr);
+}
+
+CLHandler(mtmsr) {
+    const auto rs = info_.mInst.field_rs();
+
+    e_.store_msr(e_.load_gpr(rs));
+}
+
+// from QEMU
+#define PPC_BIT_NR(bit) (63 - (bit))
+
+#define MSR_HV PPC_BIT_NR(3)
+#define MSR_S PPC_BIT_NR(41)
+#define MSR_EE PPC_BIT_NR(48)
+#define MSR_ME PPC_BIT_NR(51)
+#define MSR_RI PPC_BIT_NR(62)
+#define MSR_LE PPC_BIT_NR(63)
+
+CLHandler(mtmsrd) {
+    const auto rs = info_.mInst.field_rs();
+    const auto l = info_.mInst.field_mtmsrd_l();
+
+    if (l == 0) {
+        LOG_DEBUG("UNIMPLEMENTED mtmsrd_l == 0\n");
+        throw std::runtime_error("UNIMPLEMENTED mtmsrd_l == 0\n");
+        return;
+    }
+
+    const Value from = e_.load_gpr(rs);
+    const Value msr = e_.load_msr();
+
+    // EE = architectural bit 48 -> LSB bit 15
+    // RI = architectural bit 62 -> LSB bit 1
+    constexpr uint64_t mtmsrd_mask = (1ULL << 15) | (1ULL << 1);
+    const Value new_msr = e_.ins().bitselect(e_.i64(mtmsrd_mask), from, msr);
+
+    e_.store_msr(new_msr);
+}

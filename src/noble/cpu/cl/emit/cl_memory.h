@@ -221,3 +221,99 @@ CLHandler(stfdx) {
 CLHandler(stfdux) {
     emit_fstore_indexed<64, true>(e_, info_);
 }
+
+CLHandler(stfiwx) {
+    const auto frs = info_.mInst.field_frs();
+    const auto ra = info_.mInst.field_ra();
+    const auto rb = info_.mInst.field_rb();
+
+    const Value base = ra ? e_.load_gpr(ra) : e_.i64(0);
+    const Value ea = e_.ins().iadd(base, e_.load_gpr(rb));
+
+    const Value bits = e_.ins().bitcast(types::I64(), MemFlags{}, e_.load_fpr(frs));
+    const Value value = e_.ins().bswap(e_.reduce32(bits));
+
+    e_.store_memory(ea, value);
+}
+
+CLHandler(lwarx) {
+    const auto rt = info_.mInst.field_rd();
+    const auto ra = info_.mInst.field_ra();
+    const auto rb = info_.mInst.field_rb();
+
+    const Value base = ra ? e_.load_gpr(ra) : e_.i64(0);
+    const Value ea = e_.ins().iadd(base, e_.load_gpr(rb));
+
+    e_.ins().fence();
+
+    const Value raw = e_.load_memory(ea, types::I32());
+
+    e_.ins().store(e_.builder.memflags_new(), ea, e_.vCpuState, ReserveAddressOffset());
+    e_.ins().store(e_.builder.memflags_new(), e_.zext64(raw), e_.vCpuState, ReserveValueOffset());
+    e_.ins().store(e_.builder.memflags_new(), e_.i8(1), e_.vCpuState, ReserveValidOffset());
+
+    e_.store_gpr(rt, e_.zext64(e_.ins().bswap(raw)));
+}
+
+// TODO: refactor this please lol
+CLHandler(stwcx) {
+    const auto rs = info_.mInst.field_rs();
+    const auto ra = info_.mInst.field_ra();
+    const auto rb = info_.mInst.field_rb();
+
+    const Value base = ra ? e_.load_gpr(ra) : e_.i64(0);
+    const Value ea = e_.reduce32(e_.ins().iadd(base, e_.load_gpr(rb)));
+    const Value guest_addr = e_.zext64(ea);
+    const Value host_addr = e_.ins().iadd(e_.vMemBase, guest_addr);
+
+    const Value reserve_valid
+        = e_.ins().load(types::I8(), e_.builder.memflags_new(), e_.vCpuState, ReserveValidOffset());
+
+    const Value reserve_addr
+        = e_.ins().load(types::I64(), e_.builder.memflags_new(), e_.vCpuState, ReserveAddressOffset());
+
+    e_.ins().store(e_.builder.memflags_new(), e_.i8(0), e_.vCpuState, ReserveValidOffset());
+
+    const Value address_matches = e_.ins().icmp(IntCC::CL_INTCC_EQUAL, guest_addr, reserve_addr);
+    const Value can_store = e_.ins().band(reserve_valid, address_matches);
+
+    const Block try_store = e_.builder.create_block();
+    const Block failed = e_.builder.create_block();
+    const Block done = e_.builder.create_block();
+
+    e_.Branch(can_store, try_store, {}, failed, {});
+
+    e_.SwitchToBlock(try_store);
+
+    const Value expected64
+        = e_.ins().load(types::I64(), e_.builder.memflags_new(), e_.vCpuState, ReserveValueOffset());
+
+    const Value expected = e_.reduce32(expected64);
+    const Value value = e_.reduce32(e_.load_gpr(rs));
+    const Value desired = e_.ins().bswap(value);
+
+    const Value old = e_.ins().atomic_cas(e_.builder.memflags_new(), host_addr, expected, desired);
+    const Value success = e_.ins().icmp(IntCC::CL_INTCC_EQUAL, old, expected);
+
+    e_.ins().store(e_.builder.memflags_new(), success, e_.vCpuState, CRFieldBitOffset(0, 2));
+    e_.Jump(done);
+
+    e_.SwitchToBlock(failed);
+
+    e_.ins().store(e_.builder.memflags_new(), e_.i8(0), e_.vCpuState, CRFieldBitOffset(0, 2));
+    e_.Jump(done);
+
+    e_.SwitchToBlock(done);
+
+    // can be a store I16
+    e_.ins().store(e_.builder.memflags_new(), e_.i16(0), e_.vCpuState, CRFieldBitOffset(0, 0));
+    // e_.ins().store(e_.builder.memflags_new(), e_.i8(0), e_.vCpuState, CRFieldBitOffset(0, 0));
+    // e_.ins().store(e_.builder.memflags_new(), e_.i8(0), e_.vCpuState, CRFieldBitOffset(0, 1));
+
+    // TODO:
+    /*  const Value so = e_.ins().load(types::I8(), e_.builder.memflags_new(), e_.vCpuState,
+      GetXER_SO_Offset()); e_.ins().store(e_.builder.memflags_new(), so, e_.vCpuState, CRFieldBitOffset(0,
+      3)); */ // ok clang format..
+
+    e_.ins().fence();
+}

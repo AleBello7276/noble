@@ -48,6 +48,9 @@ public:
     void store_ca(cranelift::Value value);
     cranelift::Value load_ca();
 
+    cranelift::Value load_msr();
+    void store_msr(cranelift::Value value);
+
 public:
     /* flush cached register states to context */
     void FlushState();

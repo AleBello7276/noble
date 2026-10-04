@@ -56,6 +56,7 @@ using Linkage = ClLinkage;
 using IntCC = ClIntCC;
 using FloatCC = ClFloatCC;
 using Endianness = ClEndianness;
+using AtomicRmwOp = ClAtomicRmwOp;
 using CallConv = ClCallConv;
 using TrapCode = ClTrapCode;
 
@@ -1178,6 +1179,38 @@ public:
     // store a value at an address and byte offset
     Inst store(MemFlags flags, Value value, Value address, std::int32_t offset) const noexcept {
         return Inst{cl_ins_store(builder_, flags, value.raw(), address.raw(), offset)};
+    }
+
+    // emit a sequentially consistent fence that prevents loads and stores from crossing it
+    Inst fence() const noexcept { return Inst{cl_ins_fence(builder_)}; }
+
+    // atomic operations are sequentially consistent and accept scalar integer types
+    // addresses must use the target pointer type and be naturally aligned for the accessed type
+    // use flags from this function with native endianness and add offsets to the address explicitly
+    // support for i128 atomics depends on the target and enabled cpu features
+
+    // atomically load an integer of the supplied type
+    Value atomic_load(Type type, MemFlags flags, Value address) const noexcept {
+        return Value{cl_ins_atomic_load(builder_, type, flags, address.raw())};
+    }
+
+    // atomically store an integer using its value type as the memory access type
+    Inst atomic_store(MemFlags flags, Value value, Value address) const noexcept {
+        return Inst{cl_ins_atomic_store(builder_, flags, value.raw(), address.raw())};
+    }
+
+    // apply an operation to memory and return its old value with the supplied integer type
+    // value must have the supplied type and xchg replaces memory with value
+    Value atomic_rmw(Type type, MemFlags flags, AtomicRmwOp operation, Value address,
+                     Value value) const noexcept {
+        return Value{cl_ins_atomic_rmw(builder_, type, flags, static_cast<std::uint32_t>(operation),
+                                      address.raw(), value.raw())};
+    }
+
+    // store replacement only if memory equals expected and always return the old memory value
+    // expected and replacement must have the same integer type and old == expected means success
+    Value atomic_cas(MemFlags flags, Value address, Value expected, Value replacement) const noexcept {
+        return Value{cl_ins_atomic_cas(builder_, flags, address.raw(), expected.raw(), replacement.raw())};
     }
 
 private:
