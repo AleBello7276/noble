@@ -4,6 +4,9 @@
 #include "cranelift.h"
 #include "emulator/Memory.h"
 
+#include <bit>
+#include <cstdint>
+
 // set to 0 for a direct load or store on every register access
 #ifndef NOBLE_CRANELIFT_REGISTER_CACHE
 #define NOBLE_CRANELIFT_REGISTER_CACHE 0
@@ -77,6 +80,9 @@ public:
     cranelift::Value i32(size_t immediate) { return iconst(cranelift::types::I32(), immediate); }
     cranelift::Value i64(size_t immediate) { return iconst(cranelift::types::I64(), immediate); }
 
+    cranelift::Value f32(float immediate) { return ins().f32const(std::bit_cast<uint32_t>(immediate)); }
+    cranelift::Value f64(double immediate) { return ins().f64const(std::bit_cast<uint64_t>(immediate)); }
+
     // extend helpers
     cranelift::Value zext16(cranelift::Value value) { return ins().uextend(cranelift::types::I16(), value); }
     cranelift::Value zext32(cranelift::Value value) { return ins().uextend(cranelift::types::I32(), value); }
@@ -126,6 +132,10 @@ public:
     void copy_fpscr_to_cr1();
 
     cranelift::Value load_clock();
+
+    cranelift::Value to_single(cranelift::Value value) {
+        return ins().fpromote(cranelift::types::F64(), ins().fdemote(cranelift::types::F32(), value));
+    }
 
 public:
     PPCFuncMap mFuncRanges;

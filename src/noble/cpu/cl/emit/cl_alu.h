@@ -501,6 +501,37 @@ CLHandler(rlwinm) {
         e_.record_cr(0, result, e_.i64(0));
 }
 
+CLHandler(rldicl) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
+    const auto rc = info_.mInst.field_rc();
+    const auto sh = info_.mInst.field_sh();
+    const auto mb = info_.mInst.field_mb();
+
+    const uint64_t mask = PPCMASK(mb, 63);
+    const Value source = e_.load_gpr(rs);
+
+    const Value result = [&]() -> Value {
+        // srdi RA,RS,n
+        // the rotate+mask is just a right shift
+        if (mb && sh == 64 - mb)
+            return e_.ins().ushr_imm_u(source, mb);
+
+        // No rotation.
+        if (sh == 0)
+            return mask == UINT64_MAX ? source : e_.ins().band(source, e_.i64(mask));
+
+        const Value rotated = e_.ins().rotl_imm_u(source, sh);
+
+        return mask == UINT64_MAX ? rotated : e_.ins().band(rotated, e_.i64(mask));
+    }();
+
+    e_.store_gpr(ra, result);
+
+    if (rc)
+        e_.record_cr(0, result);
+}
+
 CLHandler(divwu) {
     const auto oe = info_.mInst.field_oe();
     const auto rc = info_.mInst.field_rc();

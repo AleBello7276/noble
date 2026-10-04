@@ -451,3 +451,20 @@ static inline bool InstrCheck_rlx_only_needs_low(unsigned rotation, uint64_t mas
     return all_ones_32 == mask32;  // mask is only 32 bits and all bits from the
                                    // rotation are discarded
 }
+
+inline Value fctid_convert(EmitterContext& e_, Value src, Value rounded) {
+    // PPC requires NaN -> 0x8000000000000000
+    const Value is_nan = e_.ins().fcmp(FloatCC::CL_FLOATCC_UNORDERED, src, src);
+
+    // cranelift saturation matches PPC numeric overflow behavior:
+    //
+    // > INT64_MAX -> INT64_MAX
+    // < INT64_MIN -> INT64_MIN
+    //
+    // NaN -> 0 which fix below
+    const Value converted = e_.ins().fcvt_to_sint_sat(types::I64(), rounded);
+    const Value integer = e_.ins().select(is_nan, e_.i64(INT64_MIN), converted);
+
+    // FCTID stores the integer BIT PATTERN in the FPR
+    return e_.ins().bitcast(types::F64(), MemFlags{}, integer);
+}
