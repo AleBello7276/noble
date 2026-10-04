@@ -271,6 +271,24 @@ KProcess* Kernel::GetThreadProcess(bool system) {
     return CreateGuestProcessLocked(info);
 }
 
+KernelObject* Kernel::LookupGuestObject(GuestAddress address) {
+    if (!address)
+        return nullptr;
+
+    std::scoped_lock lock(threadObjectsMutex_);
+
+    for (const auto& process : processes_) {
+        if (process->guest_address() == address)
+            return process.get();
+
+        for (const auto& thread : process->threads_) {
+            if (thread->guest_address() == address)
+                return thread.get();
+        }
+    }
+    return nullptr;
+}
+
 KProcess* Kernel::CreateGuestProcessLocked(const ProcessCreateInfo& info) {
     auto process = std::make_unique<KProcess>(next_process_id_++, info.type);
 

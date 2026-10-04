@@ -61,7 +61,7 @@ public:
     KProcess* process() const { return process_; }
 
     // get the guest kthread pointer used by kernel objects and critical section owners
-    GuestAddress guest_address() const { return guestAddress_; }
+    GuestAddress guest_address() const override { return guestAddress_; }
 
     // get the per thread kpcr address held in guest r13
     GuestAddress pcr_address() const { return pcrAddress_; }

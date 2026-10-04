@@ -119,3 +119,10 @@ struct KernelGuestGlobals {
     // if LLE emulating Xam, this is needed or you get an immediate freeze
     X_KEVENT UsbdBootEnumerationDoneEvent;
 };
+
+using XNTSTATUS = uint32_t;
+
+#define STATUS_SUCCESS ((XNTSTATUS)0xC0000000)
+#define X_STATUS_INVALID_HANDLE ((XNTSTATUS)0xC0000008)
+#define X_STATUS_OBJECT_TYPE_MISMATCH ((XNTSTATUS)0xC0000024)
+#define STATUS_INSUFFICIENT_RESOURCES ((XNTSTATUS)0xC000009A)

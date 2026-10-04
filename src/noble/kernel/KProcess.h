@@ -46,7 +46,7 @@ public:
     uint32_t id() const { return id_; }
 
     // get the guest address of the process record referenced by each kthread
-    GuestAddress guest_address() const { return guestAddress_; }
+    GuestAddress guest_address() const override { return guestAddress_; }
 
     // get the process type inherited by threads belonging to this process
     ProcessType type() const { return type_; }

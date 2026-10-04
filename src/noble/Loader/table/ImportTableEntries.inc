@@ -26,7 +26,7 @@
     {XboxLibrary::XboxKrnl, 0x0018, ImportType::Function, "ExSetXConfigSetting"},
     {XboxLibrary::XboxKrnl, 0x0019, ImportType::Function, "ExTerminateThread"},
     {XboxLibrary::XboxKrnl, 0x001A, ImportType::Function, "ExTerminateTitleProcess"},
-    {XboxLibrary::XboxKrnl, 0x001B, ImportType::Function, "ExThreadObjectType"},
+    {XboxLibrary::XboxKrnl, 0x001B, ImportType::Variable, "ExThreadObjectType"},
     {XboxLibrary::XboxKrnl, 0x001C, ImportType::Function, "ExTimerObjectType"},
     {XboxLibrary::XboxKrnl, 0x001D, ImportType::Function, "MmDoubleMapMemory"},
     {XboxLibrary::XboxKrnl, 0x001E, ImportType::Function, "MmUnmapMemory"},

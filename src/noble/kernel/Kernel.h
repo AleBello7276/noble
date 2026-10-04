@@ -30,6 +30,8 @@ public:
     // find the title process or create the system process on its first thread request
     KProcess* GetThreadProcess(bool system);
 
+    KernelObject* LookupGuestObject(GuestAddress address);
+
     // publish the executable guest loader record and retain its original xex header
     bool SetExecutableModule(const XLoader::IImage& image, std::string_view imagePath = {});
 

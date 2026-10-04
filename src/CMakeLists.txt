@@ -55,6 +55,7 @@ set(Kernel
     noble/kernel/hle/krnl/Rtl.cpp
     noble/kernel/hle/krnl/Memory.cpp
     noble/kernel/hle/krnl/Modules.cpp
+    noble/kernel/hle/krnl/Objects.cpp
     noble/kernel/hle/krnl/Variables.cpp
     noble/kernel/hle/krnl/Video.cpp
     noble/kernel/hle/krnl/XConfig.cpp

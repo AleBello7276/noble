@@ -1,6 +1,7 @@
 #include "Variables.h"
 
 #include "cpu/Scheduler.h"
+#include "kernel/KernelTypes.h"
 #include <array>
 #include <atomic>
 #include <cstring>
@@ -9,6 +10,12 @@
 namespace hle::krnl {
 
 void RegisterVariables(Registry& registry) {
+    // export the thread descriptor identity used by object type checks
+    // allocation callbacks remain unused by the current hle object services
+    X_OBJECT_TYPE threadType{};
+    threadType.pool_tag = 0x65726854;
+    registry.DefineVariableBytes(XboxLibrary::XboxKrnl, "ExThreadObjectType",
+                                 std::as_bytes(std::span{&threadType, 1}));
     // a null monitor pointer indicates that no kernel debug monitor is attached
     registry.DefineVariable<uint32_t>(XboxLibrary::XboxKrnl, "KeDebugMonitorData", 0);
     // a null monitor pointer indicates that no kernel certification monitor is attached

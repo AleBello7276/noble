@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/endian.h"
+#include <atomic>
 #include <cstdint>
 
 struct X_LIST_ENTRY {
@@ -79,6 +80,29 @@ public:
 
     KernelObjectType type() const { return type_; }
 
+    virtual uint32_t guest_address() const { return 0; }
+
+    bool RetainGuestReference() {
+        auto count = guestReferences_.load(std::memory_order_relaxed);
+        while (count != UINT32_MAX) {
+            if (guestReferences_.compare_exchange_weak(count, count + 1, std::memory_order_relaxed))
+                return true;
+        }
+        return false;
+    }
+
+    bool ReleaseGuestReference() {
+        auto count = guestReferences_.load(std::memory_order_relaxed);
+        while (count) {
+            if (guestReferences_.compare_exchange_weak(count, count - 1, std::memory_order_relaxed))
+                return true;
+        }
+        return false;
+    }
+
+    uint32_t guest_reference_count() const { return guestReferences_.load(std::memory_order_relaxed); }
+
 private:
     KernelObjectType type_;
+    std::atomic_uint32_t guestReferences_ = 0;
 };
