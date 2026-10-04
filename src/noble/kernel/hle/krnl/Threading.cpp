@@ -39,6 +39,9 @@ uint32_t KeQueryPerformanceFrequency() {
     return static_cast<uint32_t>(result);
 }
 
+// accept normal apc callbacks that intentionally perform no work
+void KiApcNormalRoutineNop() {}
+
 constexpr std::array exports{
     Bind<&KeGetCurrentProcessType>(XboxLibrary::XboxKrnl, "KeGetCurrentProcessType"),
     Bind<&KeTlsAlloc>(XboxLibrary::XboxKrnl, "KeTlsAlloc"),
@@ -46,6 +49,8 @@ constexpr std::array exports{
     Bind<&KeTlsGetValue>(XboxLibrary::XboxKrnl, "KeTlsGetValue"),
     Bind<&KeTlsSetValue>(XboxLibrary::XboxKrnl, "KeTlsSetValue"),
     Bind<&KeQueryPerformanceFrequency>(XboxLibrary::XboxKrnl, "KeQueryPerformanceFrequency"),
+    Bind<&KiApcNormalRoutineNop>(XboxLibrary::XboxKrnl, "KiApcNormalRoutineNop"),
+    Bind<&KiApcNormalRoutineNop>(XboxLibrary::XboxKrnl, "KiApcNormalRoutineNop_"),
 };
 
 std::span<const Export> ThreadingExports() {

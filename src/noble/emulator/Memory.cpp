@@ -209,6 +209,17 @@ bool Memory::AllocateFixed(GuestAddress address, size_t size) {
     return AllocateAtLocked(address, rounded);
 }
 
+bool Memory::MapDeviceMemory(GuestAddress address, size_t size) {
+    constexpr uint64_t begin = 0x7F000000;
+    constexpr uint64_t end = 0x80000000;
+    if (address < begin || address >= end || !size || address % 4096 || size % 4096
+        || size > end - address)
+        return false;
+
+    std::scoped_lock lock(mutex_);
+    return AllocateAtLocked(address, size);
+}
+
 bool Memory::FreeVirtual(GuestAddress address) {
     std::scoped_lock lock(mutex_);
 

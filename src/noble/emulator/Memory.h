@@ -47,6 +47,10 @@ public:
     /* allocate guest pages at a specific address */
     bool AllocateFixed(GuestAddress address, size_t size);
 
+    // allocate page aligned device storage in the reserved gpu and mmio range
+    // release the mapping with FreeVirtual when the device shuts down
+    bool MapDeviceMemory(GuestAddress address, size_t size);
+
     // reserve or commit a page aligned virtual range and return the selected guest address
     VirtualAllocationResult AllocateVirtualRegion(GuestAddress address, size_t size, GuestHeapKind kind,
                                                   bool reserve, bool commit, bool topDown,

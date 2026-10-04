@@ -1,11 +1,21 @@
 #pragma once
 
 #include "GPUBackend.h"
+#include "Registers.h"
 #include <mutex>
+
+class Memory;
 
 // retain graphics state without rendering or executing gpu command buffers
 class NullGPU final : public GPUBackend {
 public:
+    explicit NullGPU(Memory& memory) : memory_(memory) {}
+    ~NullGPU() override;
+
+    // guest visible register storage without command execution or register side effects
+    static constexpr uint32_t kRegisterBase = gpu::kRegisterBase;
+    static constexpr uint32_t kRegisterSize = gpu::kRegisterWindowSize;
+
     bool Initialize() override;
 
     void Shutdown() override;
@@ -39,6 +49,7 @@ public:
     EngineParameters GetEngineParameters() const;
 
 private:
+    Memory& memory_;
     mutable std::mutex mutex_;
     bool initialized_ = false;
     bool enginesInitialized_ = false;

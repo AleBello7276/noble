@@ -37,7 +37,7 @@ bool TLSAllocated(const GuestKernelProcess& process, uint32_t index, uint32_t li
 }  // namespace
 
 Kernel::Kernel(Memory& memory, Scheduler& scheduler, std::unique_ptr<GPUBackend> gpu)
-    : memory_(memory), scheduler_(scheduler), gpu_(gpu ? std::move(gpu) : std::make_unique<NullGPU>()),
+    : memory_(memory), scheduler_(scheduler), gpu_(gpu ? std::move(gpu) : std::make_unique<NullGPU>(memory)),
       imports_(*this, memory) {}
 
 bool Kernel::Initialize() {

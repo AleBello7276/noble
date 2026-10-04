@@ -412,7 +412,7 @@
     {XboxLibrary::XboxKrnl, 0x019A, ImportType::Function, "XexLoadImageFromMemory"},
     {XboxLibrary::XboxKrnl, 0x019B, ImportType::Function, "XexLoadImageHeaders"},
     {XboxLibrary::XboxKrnl, 0x019C, ImportType::Function, "XexPcToFileHeader"},
-    {XboxLibrary::XboxKrnl, 0x019D, ImportType::Function, "KiApcNormalRoutineNop"},
+    {XboxLibrary::XboxKrnl, 0x019D, ImportType::Function, "KiApcNormalRoutineNop_"},
     {XboxLibrary::XboxKrnl, 0x019E, ImportType::Function, "XexRegisterPatchDescriptor"},
     {XboxLibrary::XboxKrnl, 0x019F, ImportType::Function, "XexSendDeferredNotifications"},
     {XboxLibrary::XboxKrnl, 0x01A0, ImportType::Function, "XexStartExecutable"},

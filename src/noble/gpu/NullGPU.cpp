@@ -1,9 +1,32 @@
 #include "NullGPU.h"
+#include "RegisterDefaults.h"
+#include "core/endian.h"
+#include "emulator/Memory.h"
+
+NullGPU::~NullGPU() {
+    Shutdown();
+}
 
 bool NullGPU::Initialize() {
     std::lock_guard lock(mutex_);
     if (initialized_)
         return true;
+
+    if (!memory_.MapDeviceMemory(kRegisterBase, kRegisterSize))
+        return false;
+
+    auto* registers = static_cast<be<uint32_t>*>(memory_.Translate(kRegisterBase, kRegisterSize));
+    // apply xenia reset values to the cpu visible part of the register file
+    for (const auto& reset : gpu::kRegisterResetValues) {
+        if (gpu::IsMMIORegister(reset.index))
+            registers[static_cast<uint32_t>(reset.index)] = reset.value;
+    }
+    registers[static_cast<uint32_t>(gpu::Register::RB_EDRAM_TIMING)] = 0x08100748;
+    registers[static_cast<uint32_t>(gpu::Register::RB_BC_CONTROL)] = 0x0000200E;
+    // report vblank for the null display
+    registers[static_cast<uint32_t>(gpu::Register::D1MODE_VBLANK_VLINE_STATUS)] = 1;
+    const auto mode = GetDisplayMode();
+    registers[static_cast<uint32_t>(gpu::Register::D1MODE_VIEWPORT_SIZE)] = (mode.width << 16) | mode.height;
 
     engineParameters_ = {};
     ringBuffer_ = {};
@@ -18,6 +41,8 @@ bool NullGPU::Initialize() {
 
 void NullGPU::Shutdown() {
     std::lock_guard lock(mutex_);
+    if (initialized_)
+        memory_.FreeVirtual(kRegisterBase);
     engineParameters_ = {};
     ringBuffer_ = {};
     readPointerWriteBack_ = {};

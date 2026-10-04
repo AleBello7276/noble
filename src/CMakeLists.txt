@@ -38,6 +38,11 @@ set(Cpu
 
 set(Gpu
     noble/gpu/NullGPU.cpp
+    noble/gpu/Registers.h
+    noble/gpu/RegisterTable.inc
+    noble/gpu/RegisterEnums.h
+    noble/gpu/RegisterLayouts.h
+    noble/gpu/RegisterDefaults.h
 )
 
 set(Kernel
