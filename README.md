@@ -11,7 +11,7 @@ Join the project [Discord][dis] server!
 *noble*, refers to Noble gasses of which Xenon is a part of them and is also the codename of the console.
 
 ## Why Rust Crates in a C++ project
-Great question, well those crates are Great so i don't have to reinvent the wheel, but why not making the Emulator in Rust? Because i only know how to make thin FFI and i don't want to make this already hard project into learning rust, so the anwser is lazyness, maybe in the far future a rust port is possible. 
+Great question.. well those crates are Great so i don't have to reinvent the wheel, but why not making the Emulator in Rust? Because i only know how to make thin FFI and i don't want to make this already hard project into learning rust, so the anwser is lazyness, maybe in the far future a rust port is possible. but really, no.
 
 ## Building
 - Clang compiler is required
