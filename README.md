@@ -23,5 +23,8 @@ Great question.. well those crates are Great so i don't have to reinvent the whe
 ## Contributing
 if want to contribute, make a fork and a PR, also join the discord server! 
 
+## Credits
+
+A lot of the research, HLE implementations, some instructions, and GPU is derived directly from Xenia emulator, complete Credits to the project and all the contributors for the code, progress wont be fast without the years of research put into it.
 
 [dis]: https://discord.gg/JufwFS9mmf
