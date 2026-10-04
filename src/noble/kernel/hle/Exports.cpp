@@ -5,14 +5,16 @@
 #include "krnl/Rtl.h"
 #include "krnl/Threading.h"
 #include "krnl/Variables.h"
+#include "krnl/Video.h"
+#include "xam/Video.h"
 #include <array>
 #include <unordered_set>
 
 namespace hle {
 
 void RegisterExports(Registry& registry) {
-    const std::array groups{krnl::ThreadingExports(), krnl::RtlExports(), krnl::MemoryExports(),
-                            krnl::ModuleExports()};
+    const std::array groups{krnl::ThreadingExports(), krnl::RtlExports(),   krnl::MemoryExports(),
+                            krnl::ModuleExports(),    krnl::VideoExports(), xam::VideoExports()};
 
     std::unordered_set<uint64_t> registered;
 

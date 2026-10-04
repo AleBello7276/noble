@@ -47,6 +47,8 @@ set(Kernel
     noble/kernel/hle/krnl/Memory.cpp
     noble/kernel/hle/krnl/Modules.cpp
     noble/kernel/hle/krnl/Variables.cpp
+    noble/kernel/hle/krnl/Video.cpp
+    noble/kernel/hle/xam/Video.cpp
 )
 
 
