@@ -42,6 +42,8 @@ public:
 
     // set the base priority relative to the process and return the previous increment
     int32_t SetBasePriorityThread(KThread* thread, int32_t increment);
+    // apply a processor mask and return the previous mask while holding the scheduling lock
+    std::optional<uint32_t> SetAffinityThread(KThread* thread, uint32_t affinity);
 
     // prepare a guest wait before its current worker returns to the scheduler
     bool PrepareWait(KThread* thread);

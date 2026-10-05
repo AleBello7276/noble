@@ -1,6 +1,7 @@
 #include "Exports.h"
 
 #include "krnl/Memory.h"
+#include "krnl/IO.h"
 #include "krnl/Modules.h"
 #include "krnl/Objects.h"
 #include "krnl/Rtl.h"
@@ -17,7 +18,7 @@ namespace hle {
 void RegisterExports(Registry& registry) {
     const std::array groups{krnl::ThreadingExports(), krnl::RtlExports(),   krnl::MemoryExports(),
                             krnl::ModuleExports(),    krnl::VideoExports(), xam::VideoExports(),
-                            krnl::XConfigExports(),   krnl::ObjectExports()};
+                            krnl::XConfigExports(),   krnl::ObjectExports(), krnl::IOExports()};
 
     std::unordered_set<uint64_t> registered;
 

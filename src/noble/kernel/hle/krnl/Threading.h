@@ -1,5 +1,6 @@
 #pragma once
 
+#include "kernel/KernelTypes.h"
 #include "kernel/hle/Exports.h"
 
 namespace hle::krnl {
@@ -21,6 +22,10 @@ enum CreateThreadFlags : uint32_t {
     AffinityCpu4 = 0x10000000,
     AffinityCpu5 = 0x20000000,
 };
+
+XNTSTATUS KeSetAffinityThread(Kernel& kernel, KThread& caller, PPCContext& cpu, GuestAddress threadAddress,
+                              uint32_t affinity,
+                              Pointer<be<uint32_t>, PointerValidation::Report> previousAffinity);
 
 // expose the typed threading implementations for kernel export registration
 std::span<const Export> ThreadingExports();

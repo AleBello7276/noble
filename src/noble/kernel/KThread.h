@@ -85,6 +85,8 @@ public:
     ThreadState mState = ThreadState::Created;
 
     ThreadAffinity mAffinityMask = kAllProcessors;
+    // request migration at the next dispatcher boundary without writing another worker's cpu context
+    std::atomic_bool mRescheduleRequested = false;
     ThreadPriority mPriority = 0;
     ThreadPriority mBasePriority = 0;
 

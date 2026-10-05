@@ -14,11 +14,13 @@ uint32_t ObReferenceObjectByHandle(Kernel& kernel, KThread& caller, uint32_t han
     *out_object = 0;
 
     KernelObject* object = nullptr;
+    std::shared_ptr<KernelObject> owned;
 
     if (handle == 0xFFFFFFFE) {
         object = &caller;
     } else if (caller.process() && handle != 0xFFFFFFFF) {
-        object = caller.process()->handles.Lookup(handle);
+        owned = caller.process()->handles.Lookup(handle);
+        object = owned.get();
     }
 
     if (!object)

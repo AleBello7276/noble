@@ -517,3 +517,11 @@ inline Value make_f32x4(EmitterContext& e_, Value x, Value y, Value z, Value w) 
     v = e_.ins().insertlane(v, w, 3);
     return v;
 }
+
+inline Value vconst_i32x4(EmitterContext& e_, uint32_t x, uint32_t y, uint32_t z, uint32_t w) {
+    const std::array<uint32_t, 4> values = {x, y, z, w};
+
+    return e_.ins().vconst( 
+        types::I32X4(),
+        std::span<const uint8_t>{reinterpret_cast<const uint8_t*>(values.data()), sizeof(values)});
+}

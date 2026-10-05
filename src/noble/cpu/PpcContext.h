@@ -206,7 +206,7 @@ class KThread;
 
 enum class PPCFault : uint32_t { None, UnimplementedImport, HLEFailure, UncompiledTarget, MemoryAccess };
 
-enum class HostAction : uint32_t { None, Wait };
+enum class HostAction : uint32_t { None, Wait, Yield };
 
 // a Xenon Register File
 struct PPCContext {

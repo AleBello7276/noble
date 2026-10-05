@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "KernelTypes.h"
+#include "FileSystem.h"
 #include "cpu/Scheduler.h"
 #include "gpu/GPUBackend.h"
 #include "hle/Shims.h"
@@ -46,6 +47,8 @@ public:
 
     // update a guest thread base priority through the scheduler lock
     int32_t SetBasePriorityThread(KThread* thread, int32_t increment);
+    // change a live guest thread affinity mask through the scheduler lock
+    std::optional<uint32_t> SetAffinityThread(KThread* thread, uint32_t affinity);
 
     // create Process Main Thread
     KThread* CreateInitialThread(KProcess* process);
@@ -83,6 +86,8 @@ public:
 
     // expose the import registry whose lifetime covers compiled hle wrappers
     hle::Registry& Imports() { return imports_; }
+    // expose mounted guest files independently of hle argument decoding
+    vfs::FileSystem& Files() { return files_; }
     // allocate a process tls index and initialize the calling thread value
     uint32_t AllocateTLS(KThread& thread);
     // release a process tls index and clear that slot in every thread
@@ -135,6 +140,7 @@ private:
     diagnostics::TraceSink* trace_;
     std::unique_ptr<GPUBackend> gpu_;
     hle::Registry imports_;
+    vfs::FileSystem files_;
     GuestAddress executableModule_ = 0;
     GuestAddress executableHeader_ = 0;
     uint32_t executableSystemFlags_ = 0;

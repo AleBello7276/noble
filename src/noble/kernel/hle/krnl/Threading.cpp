@@ -158,7 +158,35 @@ int32_t KeSetBasePriorityThread(Kernel& kernel, GuestAddress thread_address, int
     return kernel.SetBasePriorityThread(thread, increment);
 }
 
+XNTSTATUS KeSetAffinityThread(Kernel& kernel, KThread& caller, PPCContext& cpu, GuestAddress threadAddress,
+                              uint32_t affinity,
+                              Pointer<be<uint32_t>, PointerValidation::Report> previousAffinity) {
+    if (!affinity || (affinity & ~uint32_t(kAllProcessors)))
+        return X_STATUS_INVALID_PARAMETER;
+
+    if (previousAffinity.guest_address() && !previousAffinity)
+        return X_STATUS_ACCESS_VIOLATION;
+
+    auto* target = dynamic_cast<KThread*>(kernel.LookupGuestObject(threadAddress));
+    if (!target)
+        return X_STATUS_INVALID_HANDLE;
+
+    const auto previous = kernel.SetAffinityThread(target, affinity);
+    if (!previous)
+        return X_STATUS_INVALID_HANDLE;
+
+    if (previousAffinity)
+        *previousAffinity = *previous;
+
+    // force a calling thread off its current worker after unwinding its compiled call chain
+    if (target == &caller && caller.mRescheduleRequested.load(std::memory_order_acquire))
+        cpu.Action = HostAction::Yield;
+
+    return STATUS_SUCCESS;
+}
+
 constexpr std::array exports{
+    Bind<&KeSetAffinityThread>(XboxLibrary::XboxKrnl, "KeSetAffinityThread"),
     Bind<&KeGetCurrentProcessType>(XboxLibrary::XboxKrnl, "KeGetCurrentProcessType"),
     Bind<&KeEnterCriticalRegion>(XboxLibrary::XboxKrnl, "KeEnterCriticalRegion"),
     Bind<&KeLeaveCriticalRegion>(XboxLibrary::XboxKrnl, "KeLeaveCriticalRegion"),

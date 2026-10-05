@@ -16,6 +16,7 @@ enum class KernelObjectType : uint8_t {
     KSemaphore,
     KMutant,
     KTimer,
+    KFile,
 };
 
 enum X_OBJECT_TYPES : uint8_t {

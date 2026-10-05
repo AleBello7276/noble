@@ -8,28 +8,35 @@ Handle HandleTable::Insert(KernelObject* object) {
     if (!object)
         throw std::invalid_argument("cannot create a handle for a null object");
 
-    std::scoped_lock lock(mutex_);
-
-    if (next_handle_ > UINT32_MAX - 4)
-        throw std::bad_alloc();
-
-    const Handle handle = next_handle_;
-    objects_.emplace(handle, object);
-    next_handle_ += 4;
-    return handle;
+    // process owned threads remain alive independently of their guest handles
+    return Insert(std::shared_ptr<KernelObject>(object, [](KernelObject*) {}));
 }
 
-KernelObject* HandleTable::Lookup(Handle handle) {
+std::shared_ptr<KernelObject> HandleTable::Lookup(Handle handle) {
     std::scoped_lock lock(mutex_);
 
     const auto object = objects_.find(handle);
     return object == objects_.end() ? nullptr : object->second;
 }
 
-void HandleTable::Remove(Handle handle) {
+Handle HandleTable::Insert(std::shared_ptr<KernelObject> object) {
+    if (!object)
+        throw std::invalid_argument("cannot create a handle for a null object");
+
     std::scoped_lock lock(mutex_);
 
-    objects_.erase(handle);
+    if (next_handle_ > UINT32_MAX - 4)
+        throw std::bad_alloc();
+    const Handle handle = next_handle_;
+    objects_.emplace(handle, std::move(object));
+    next_handle_ += 4;
+    return handle;
+}
+
+bool HandleTable::Remove(Handle handle) {
+    std::scoped_lock lock(mutex_);
+
+    return objects_.erase(handle) != 0;
 }
 
 KProcess::KProcess(uint32_t id, ProcessType type)

@@ -15,18 +15,20 @@ class HandleTable {
 public:
     // retain an object under a new process handle
     Handle Insert(KernelObject* object);
+    // retain a dynamically owned object until its handle and active operation references are released
+    Handle Insert(std::shared_ptr<KernelObject> object);
+    // retain an object while an operation uses it outside the handle table lock
+    // thread lifetime is still retained by its process until kernel shutdown
+    std::shared_ptr<KernelObject> Lookup(Handle handle);
 
-    // find an object while the owning process retains its lifetime
-    KernelObject* Lookup(Handle handle);
-
-    // release a handle without destroying the process owned object
-    void Remove(Handle handle);
+    // release a handle and its owned object when the last active operation also releases it
+    bool Remove(Handle handle);
 
 private:
     std::mutex mutex_;
     Handle next_handle_ = 0x100;
 
-    std::unordered_map<Handle, KernelObject*> objects_;
+    std::unordered_map<Handle, std::shared_ptr<KernelObject>> objects_;
 };
 
 class KThread;

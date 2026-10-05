@@ -48,6 +48,7 @@ set(Gpu
 set(Kernel
     noble/kernel/Kernel.cpp
     noble/kernel/Dispatcher.cpp
+    noble/kernel/FileSystem.cpp
     noble/kernel/KProcess.cpp
     noble/kernel/KThread.cpp
     noble/kernel/hle/Shims.cpp
@@ -57,6 +58,7 @@ set(Kernel
     noble/kernel/hle/krnl/Memory.cpp
     noble/kernel/hle/krnl/Modules.cpp
     noble/kernel/hle/krnl/Objects.cpp
+    noble/kernel/hle/krnl/IO.cpp
     noble/kernel/hle/krnl/Variables.cpp
     noble/kernel/hle/krnl/Video.cpp
     noble/kernel/hle/krnl/XConfig.cpp

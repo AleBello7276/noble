@@ -198,6 +198,25 @@ int32_t Scheduler::SetBasePriorityThread(KThread* thread, int32_t increment) {
     return previous;
 }
 
+std::optional<uint32_t> Scheduler::SetAffinityThread(KThread* thread, uint32_t affinity) {
+    std::scoped_lock lock(mutex_);
+
+    if (!thread || !affinity || (affinity & ~uint32_t(kAllProcessorsMask))
+        || thread->mState == ThreadState::Terminated
+        || thread->mTerminateRequested.load(std::memory_order_acquire))
+        return {};
+
+    const uint32_t previous = thread->mAffinityMask;
+    thread->mAffinityMask = static_cast<ThreadAffinity>(affinity);
+    const bool migrate = thread->mCurrentProcessor != kInvalidProcessor
+                         && !(affinity & (uint32_t(1) << thread->mCurrentProcessor));
+
+    thread->mRescheduleRequested.store(migrate, std::memory_order_release);
+
+    cv_.notify_all();
+    return previous;
+}
+
 void Scheduler::WorkerMain(HWT_ID processor_id, std::stop_token stop_token) {
     NameWorkerThread(processor_id);
     HardwareThread& processor = processors_[processor_id];

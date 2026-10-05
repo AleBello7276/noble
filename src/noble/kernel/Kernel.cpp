@@ -121,6 +121,7 @@ void Kernel::Shutdown() {
     }
 
     processes_.clear();
+    files_.Clear();
     imports_.ClearVariables();
 
     if (executableModule_)
@@ -226,8 +227,13 @@ bool Kernel::SetExecutableModule(const XLoader::IImage& image, std::string_view 
         record.xexHeaderBase = headerAddress;
         std::memcpy(memory_.Translate(recordAddress, sizeof(record)), &record, sizeof(record));
 
-        if (!imagePath.empty())
+        if (!imagePath.empty()) {
+            const auto directory = std::filesystem::absolute(std::filesystem::path(imagePath)).parent_path();
+            if (!files_.Mount("game:", directory) || !files_.Mount("d:", directory)
+                || !files_.Mount("\\Device\\Cdrom0", directory))
+                throw std::runtime_error("unable to mount executable directory");
             hle::krnl::UpdateCommandLine(imports_, imagePath);
+        }
         imports_.UpdateVariable<uint32_t>(XboxLibrary::XboxKrnl, "XexExecutableModuleHandle", recordAddress);
     } catch (const std::exception& error) {
         LOG_ERROR("Unable to publish executable module: {}", error.what());
@@ -563,6 +569,10 @@ void Kernel::FreeGuestThread(KThread& thread) {
 
 int32_t Kernel::SetBasePriorityThread(KThread* thread, int32_t increment) {
     return scheduler_.SetBasePriorityThread(thread, increment);
+}
+
+std::optional<uint32_t> Kernel::SetAffinityThread(KThread* thread, uint32_t affinity) {
+    return scheduler_.SetAffinityThread(thread, affinity);
 }
 
 void Kernel::StartThread(KThread* thread) {

@@ -20,6 +20,10 @@ ExecutionResult CpuExecutor::Execute(PPCContext& context, const std::atomic_bool
         if (context.Fault != PPCFault::None)
             return {ExecutionReason::Fault, context.FaultAddress};
 
+        if (context.HostThread
+            && context.HostThread->mRescheduleRequested.exchange(false, std::memory_order_acq_rel))
+            return {ExecutionReason::Yielded};
+
         // cia holds the entry to execute and nia receives the next dispatcher target
         const GuestAddress address = context.CIA;
         if (context.HostThread && address == KThread::kReturnAddress) {
@@ -72,6 +76,14 @@ ExecutionResult CpuExecutor::Execute(PPCContext& context, const std::atomic_bool
         if (context.Action == HostAction::Wait) {
             context.Action = HostAction::None;
             return {ExecutionReason::Waiting};
+        }
+
+        if (context.Action == HostAction::Yield) {
+            context.Action = HostAction::None;
+
+            if (context.HostThread)
+                context.HostThread->mRescheduleRequested.exchange(false, std::memory_order_acq_rel);
+            return {ExecutionReason::Yielded};
         }
     }
 }
