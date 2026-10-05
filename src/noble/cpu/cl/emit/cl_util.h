@@ -34,8 +34,11 @@ constexpr std::int32_t GetXER_CA_Offset() {
 }
 
 constexpr std::int32_t GetXER_SO_Offset() {
-    return static_cast<std::int32_t>(
-        SPROffset(offsetof(SPRState, XER)) + offsetof(XERr, SO));
+    return static_cast<std::int32_t>(SPROffset(offsetof(SPRState, XER)) + offsetof(XERr, SO));
+}
+
+constexpr std::int32_t VROffset(size_t index) {
+    return static_cast<std::int32_t>(offsetof(PPCContext, VRs) + index * sizeof(Vector128));
 }
 
 // TODO: template this
@@ -474,7 +477,6 @@ inline Value fctid_convert(EmitterContext& e_, Value src, Value rounded) {
     return e_.ins().bitcast(types::F64(), MemFlags{}, integer);
 }
 
-
 constexpr std::int32_t ReserveAddressOffset() {
     return static_cast<std::int32_t>(offsetof(PPCContext, reserve_address));
 }
@@ -485,4 +487,33 @@ constexpr std::int32_t ReserveValueOffset() {
 
 constexpr std::int32_t ReserveValidOffset() {
     return static_cast<std::int32_t>(offsetof(PPCContext, reserve_valid));
+}
+
+/*
+    Vxu stuff
+*/
+
+inline std::array<uint8_t, 16> make_word_shuffle_mask(uint32_t x, uint32_t y, uint32_t z, uint32_t w) {
+    return {
+        uint8_t(x * 4 + 0), uint8_t(x * 4 + 1), uint8_t(x * 4 + 2), uint8_t(x * 4 + 3),
+        uint8_t(y * 4 + 0), uint8_t(y * 4 + 1), uint8_t(y * 4 + 2), uint8_t(y * 4 + 3),
+        uint8_t(z * 4 + 0), uint8_t(z * 4 + 1), uint8_t(z * 4 + 2), uint8_t(z * 4 + 3),
+        uint8_t(w * 4 + 0), uint8_t(w * 4 + 1), uint8_t(w * 4 + 2), uint8_t(w * 4 + 3),
+    };
+}
+
+inline Value make_i32x4(EmitterContext& e_, Value x, Value y, Value z, Value w) {
+    Value v = e_.ins().splat(types::I32X4(), x);
+    v = e_.ins().insertlane(v, y, 1);
+    v = e_.ins().insertlane(v, z, 2);
+    v = e_.ins().insertlane(v, w, 3);
+    return v;
+}
+
+inline Value make_f32x4(EmitterContext& e_, Value x, Value y, Value z, Value w) {
+    Value v = e_.ins().splat(types::F32X4(), x);
+    v = e_.ins().insertlane(v, y, 1);
+    v = e_.ins().insertlane(v, z, 2);
+    v = e_.ins().insertlane(v, w, 3);
+    return v;
 }

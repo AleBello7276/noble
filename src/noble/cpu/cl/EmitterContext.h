@@ -51,6 +51,16 @@ public:
     cranelift::Value load_msr();
     void store_msr(cranelift::Value value);
 
+    cranelift::Value load_vr(uint32_t index, cranelift::Type type);
+    void store_vr(size_t index, cranelift::Value value);
+
+    cranelift::Value byteswap_v128(cranelift::Value value) {
+        static constexpr std::array<std::uint8_t, 16> mask
+            = {15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0};
+
+        return ins().shuffle(value, value, mask);
+    }
+
 public:
     /* flush cached register states to context */
     void FlushState();

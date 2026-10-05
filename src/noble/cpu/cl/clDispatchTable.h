@@ -163,5 +163,30 @@ inline constexpr auto emitter_dispatch_table = [] {
     table[to_underlying(PpcOpcode::Sync)] = &cl_sync_handler;
     table[to_underlying(PpcOpcode::Isync)] = &cl_isync_handler;
 
+    // vxu
+    table[to_underlying(PpcOpcode::Stvx)] = &cl_stvx_handler;
+    table[to_underlying(PpcOpcode::Stvxl)] = &cl_stvxl_handler;
+    table[to_underlying(PpcOpcode::Stvx128)] = &cl_stvx128_handler;
+    table[to_underlying(PpcOpcode::Stvxl128)] = &cl_stvxl128_handler;
+
+    table[to_underlying(PpcOpcode::Lvx)] = &cl_lvx_handler;
+    table[to_underlying(PpcOpcode::Lvxl)] = &cl_lvxl_handler;
+    table[to_underlying(PpcOpcode::Lvx128)] = &cl_lvx128_handler;
+    table[to_underlying(PpcOpcode::Lvxl128)] = &cl_lvxl128_handler;
+
+    table[to_underlying(PpcOpcode::Vspltisw)] = &cl_vspltisw_handler;
+    table[to_underlying(PpcOpcode::Vspltisw128)] = &cl_vspltisw128_handler;
+    table[to_underlying(PpcOpcode::Vupkd3d128)] = &cl_vupkd3d128_handler;
+
+    table[to_underlying(PpcOpcode::Vpermwi128)] = &cl_vpermwi128_handler;
+
+    table[to_underlying(PpcOpcode::Vsubfp)] = &cl_vsubfp_handler;
+    table[to_underlying(PpcOpcode::Vsubfp128)] = &cl_vsubfp128_handler;
+
+    table[to_underlying(PpcOpcode::Vor)] = &cl_vor_handler;
+    table[to_underlying(PpcOpcode::Vor128)] = &cl_vor128_handler;
+
+    table[to_underlying(PpcOpcode::Vrlimi128)] = &cl_vrlimi128_handler;
+
     return table;
 }();

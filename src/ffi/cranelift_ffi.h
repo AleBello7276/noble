@@ -133,6 +133,75 @@ ClType cl_type_f16(void);
 ClType cl_type_f32(void);
 ClType cl_type_f64(void);
 ClType cl_type_f128(void);
+// fixed vector types with instruction support depending on the target backend and cpu features
+// return the cranelift i8x2 type with 2 i8 lanes
+ClType cl_type_i8x2(void);
+// return the cranelift i8x4 type with 4 i8 lanes
+ClType cl_type_i8x4(void);
+// return the cranelift i16x2 type with 2 i16 lanes
+ClType cl_type_i16x2(void);
+// return the cranelift f16x2 type with 2 f16 lanes
+ClType cl_type_f16x2(void);
+// return the cranelift i8x8 type with 8 i8 lanes
+ClType cl_type_i8x8(void);
+// return the cranelift i16x4 type with 4 i16 lanes
+ClType cl_type_i16x4(void);
+// return the cranelift i32x2 type with 2 i32 lanes
+ClType cl_type_i32x2(void);
+// return the cranelift f16x4 type with 4 f16 lanes
+ClType cl_type_f16x4(void);
+// return the cranelift f32x2 type with 2 f32 lanes
+ClType cl_type_f32x2(void);
+// return the cranelift i8x16 type with 16 i8 lanes
+ClType cl_type_i8x16(void);
+// return the cranelift i16x8 type with 8 i16 lanes
+ClType cl_type_i16x8(void);
+// return the cranelift i32x4 type with 4 i32 lanes
+ClType cl_type_i32x4(void);
+// return the cranelift i64x2 type with 2 i64 lanes
+ClType cl_type_i64x2(void);
+// return the cranelift f16x8 type with 8 f16 lanes
+ClType cl_type_f16x8(void);
+// return the cranelift f32x4 type with 4 f32 lanes
+ClType cl_type_f32x4(void);
+// return the cranelift f64x2 type with 2 f64 lanes
+ClType cl_type_f64x2(void);
+// return the cranelift i8x32 type with 32 i8 lanes
+ClType cl_type_i8x32(void);
+// return the cranelift i16x16 type with 16 i16 lanes
+ClType cl_type_i16x16(void);
+// return the cranelift i32x8 type with 8 i32 lanes
+ClType cl_type_i32x8(void);
+// return the cranelift i64x4 type with 4 i64 lanes
+ClType cl_type_i64x4(void);
+// return the cranelift i128x2 type with 2 i128 lanes
+ClType cl_type_i128x2(void);
+// return the cranelift f16x16 type with 16 f16 lanes
+ClType cl_type_f16x16(void);
+// return the cranelift f32x8 type with 8 f32 lanes
+ClType cl_type_f32x8(void);
+// return the cranelift f64x4 type with 4 f64 lanes
+ClType cl_type_f64x4(void);
+// return the cranelift f128x2 type with 2 f128 lanes
+ClType cl_type_f128x2(void);
+// return the cranelift i8x64 type with 64 i8 lanes
+ClType cl_type_i8x64(void);
+// return the cranelift i16x32 type with 32 i16 lanes
+ClType cl_type_i16x32(void);
+// return the cranelift i32x16 type with 16 i32 lanes
+ClType cl_type_i32x16(void);
+// return the cranelift i64x8 type with 8 i64 lanes
+ClType cl_type_i64x8(void);
+// return the cranelift i128x4 type with 4 i128 lanes
+ClType cl_type_i128x4(void);
+// return the cranelift f16x32 type with 32 f16 lanes
+ClType cl_type_f16x32(void);
+// return the cranelift f32x16 type with 16 f32 lanes
+ClType cl_type_f32x16(void);
+// return the cranelift f64x8 type with 8 f64 lanes
+ClType cl_type_f64x8(void);
+// return the cranelift f128x4 type with 4 f128 lanes
+ClType cl_type_f128x4(void);
 // return a scalar integer type or zero when the width is unsupported
 ClType cl_type_int(uint16_t bits);
 // return a fixed simd type from a scalar lane type and a power of two lane count
@@ -237,6 +306,8 @@ ClFuncRef cl_builder_declare_func_in_func(ClJitModule* module, ClFuncId id, ClFu
 ClGlobalValue cl_builder_declare_data_in_func(const ClJitModule* module, ClDataId id,
                                               ClFunctionBuilder* builder);
 
+// insert a scalar i8 i16 i32 or i64 constant and use splat for vector constants
+// return the invalid value and set last_error for an unsupported type
 ClValue cl_ins_iconst(ClFunctionBuilder* builder, ClType type, int64_t immediate);
 ClValue cl_ins_f32const(ClFunctionBuilder* builder, uint32_t bits);
 ClValue cl_ins_f64const(ClFunctionBuilder* builder, uint64_t bits);
@@ -277,6 +348,18 @@ ClValue cl_ins_fdiv(ClFunctionBuilder* builder, ClValue left, ClValue right);
 // reinterpret equal-sized types without numerical conversion using flags from this function
 // specify endianness when vector lane counts differ and use memflags_new for scalar casts
 ClValue cl_ins_bitcast(ClFunctionBuilder* builder, ClType type, ClMemFlags flags, ClValue value);
+// replicate a scalar into every lane of the requested vector type whose lane type must match value
+ClValue cl_ins_splat(ClFunctionBuilder* builder, ClType type, ClValue value);
+// extract a scalar lane using a constant index less than the vector lane count
+ClValue cl_ins_extractlane(ClFunctionBuilder* builder, ClValue vector, uint8_t lane);
+// replace a lane using a matching scalar value and a constant index less than the vector lane count
+ClValue cl_ins_insertlane(ClFunctionBuilder* builder, ClValue vector, ClValue value, uint8_t lane);
+// shuffle two i8x16 vectors using 16 readable mask bytes copied into the function
+// indices 0 through 15 select left and 16 through 31 select right
+// return the invalid value and set last_error for a null mask or an index outside 0 through 31
+ClValue cl_ins_shuffle(ClFunctionBuilder* builder, ClValue left, ClValue right, const uint8_t* mask);
+// permute i8x16 bytes using i8x16 runtime indices with indices above 15 producing zero
+ClValue cl_ins_swizzle(ClFunctionBuilder* builder, ClValue vector, ClValue indices);
 // copy the sign bit of right onto left without changing the other bits
 ClValue cl_ins_fcopysign(ClFunctionBuilder* builder, ClValue left, ClValue right);
 // choose the smaller float and propagate nan with negative zero preferred over positive zero

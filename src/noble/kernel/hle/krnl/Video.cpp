@@ -106,10 +106,30 @@ uint32_t VdCallGraphicsNotificationRoutines([[maybe_unused]] uint32_t notificati
     return 0;
 }
 
+// return success as a stub since the null gpu has no edram hardware to retrain
+uint32_t VdRetrainEDRAM([[maybe_unused]] uint32_t unknown0, [[maybe_unused]] uint32_t unknown1,
+                      [[maybe_unused]] uint32_t unknown2, [[maybe_unused]] uint32_t unknown3,
+                      [[maybe_unused]] uint32_t unknown4, [[maybe_unused]] uint32_t unknown5) {
+    return 0;
+}
+
+// return success as a stub since the null gpu has no edram hardware to retrain
+uint32_t VdRetrainEDRAMWorker([[maybe_unused]] uint32_t unknown) {
+    return 0;
+}
+
+// report successful hsio training as a stub since the null gpu has no physical link to train
+uint32_t VdIsHSIOTrainingSucceeded() {
+    return 1;
+}
+
 constexpr std::array exports{
     Bind<&VdQueryVideoMode>(XboxLibrary::XboxKrnl, "VdQueryVideoMode"),
     Bind<&VdGetCurrentDisplayGamma>(XboxLibrary::XboxKrnl, "VdGetCurrentDisplayGamma"),
     Bind<&VdQueryVideoFlags>(XboxLibrary::XboxKrnl, "VdQueryVideoFlags"),
+    Bind<&VdIsHSIOTrainingSucceeded>(XboxLibrary::XboxKrnl, "VdIsHSIOTrainingSucceeded"),
+    Bind<&VdRetrainEDRAM>(XboxLibrary::XboxKrnl, "VdRetrainEDRAM"),
+    Bind<&VdRetrainEDRAMWorker>(XboxLibrary::XboxKrnl, "VdRetrainEDRAMWorker"),
     Bind<&VdCallGraphicsNotificationRoutines>(XboxLibrary::XboxKrnl, "VdCallGraphicsNotificationRoutines"),
     Bind<&VdInitializeEngines>(XboxLibrary::XboxKrnl, "VdInitializeEngines"),
     Bind<&VdInitializeRingBuffer>(XboxLibrary::XboxKrnl, "VdInitializeRingBuffer"),

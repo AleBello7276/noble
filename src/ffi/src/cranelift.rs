@@ -93,21 +93,56 @@ pub extern "C" fn cl_last_error() -> *const c_char {
     LAST_ERROR.with(|slot| slot.borrow().as_ptr())
 }
 
-macro_rules! scalar_type {
+macro_rules! ffi_type {
     ($name:ident, $value:expr) => {
         #[no_mangle]
         pub extern "C" fn $name() -> u16 { raw_type($value) }
     };
 }
-scalar_type!(cl_type_i8, types::I8);
-scalar_type!(cl_type_i16, types::I16);
-scalar_type!(cl_type_i32, types::I32);
-scalar_type!(cl_type_i64, types::I64);
-scalar_type!(cl_type_i128, types::I128);
-scalar_type!(cl_type_f16, types::F16);
-scalar_type!(cl_type_f32, types::F32);
-scalar_type!(cl_type_f64, types::F64);
-scalar_type!(cl_type_f128, types::F128);
+ffi_type!(cl_type_i8, types::I8);
+ffi_type!(cl_type_i16, types::I16);
+ffi_type!(cl_type_i32, types::I32);
+ffi_type!(cl_type_i64, types::I64);
+ffi_type!(cl_type_i128, types::I128);
+ffi_type!(cl_type_f16, types::F16);
+ffi_type!(cl_type_f32, types::F32);
+ffi_type!(cl_type_f64, types::F64);
+ffi_type!(cl_type_f128, types::F128);
+
+ffi_type!(cl_type_i8x2, types::I8X2);
+ffi_type!(cl_type_i8x4, types::I8X4);
+ffi_type!(cl_type_i16x2, types::I16X2);
+ffi_type!(cl_type_f16x2, types::F16X2);
+ffi_type!(cl_type_i8x8, types::I8X8);
+ffi_type!(cl_type_i16x4, types::I16X4);
+ffi_type!(cl_type_i32x2, types::I32X2);
+ffi_type!(cl_type_f16x4, types::F16X4);
+ffi_type!(cl_type_f32x2, types::F32X2);
+ffi_type!(cl_type_i8x16, types::I8X16);
+ffi_type!(cl_type_i16x8, types::I16X8);
+ffi_type!(cl_type_i32x4, types::I32X4);
+ffi_type!(cl_type_i64x2, types::I64X2);
+ffi_type!(cl_type_f16x8, types::F16X8);
+ffi_type!(cl_type_f32x4, types::F32X4);
+ffi_type!(cl_type_f64x2, types::F64X2);
+ffi_type!(cl_type_i8x32, types::I8X32);
+ffi_type!(cl_type_i16x16, types::I16X16);
+ffi_type!(cl_type_i32x8, types::I32X8);
+ffi_type!(cl_type_i64x4, types::I64X4);
+ffi_type!(cl_type_i128x2, types::I128X2);
+ffi_type!(cl_type_f16x16, types::F16X16);
+ffi_type!(cl_type_f32x8, types::F32X8);
+ffi_type!(cl_type_f64x4, types::F64X4);
+ffi_type!(cl_type_f128x2, types::F128X2);
+ffi_type!(cl_type_i8x64, types::I8X64);
+ffi_type!(cl_type_i16x32, types::I16X32);
+ffi_type!(cl_type_i32x16, types::I32X16);
+ffi_type!(cl_type_i64x8, types::I64X8);
+ffi_type!(cl_type_i128x4, types::I128X4);
+ffi_type!(cl_type_f16x32, types::F16X32);
+ffi_type!(cl_type_f32x16, types::F32X16);
+ffi_type!(cl_type_f64x8, types::F64X8);
+ffi_type!(cl_type_f128x4, types::F128X4);
 
 #[no_mangle]
 pub extern "C" fn cl_type_int(bits: u16) -> u16 {
@@ -649,7 +684,12 @@ pub unsafe extern "C" fn cl_builder_declare_data_in_func(module: *const JITModul
 
 #[no_mangle]
 pub unsafe extern "C" fn cl_ins_iconst(builder: *mut FunctionBuilder<'static>, value_type: u16, immediate: i64) -> u32 {
-    (*builder).ins().iconst(ty(value_type), immediate).as_u32()
+    let value_type = ty(value_type);
+    if !matches!(value_type, types::I8 | types::I16 | types::I32 | types::I64) {
+        error("iconst requires scalar i8 i16 i32 or i64; use splat for vector constants");
+        return INVALID;
+    }
+    (*builder).ins().iconst(value_type, immediate).as_u32()
 }
 
 macro_rules! binary_ins {
@@ -744,6 +784,29 @@ macro_rules! typed_unary_ins {
 typed_unary_ins!(cl_ins_ireduce, ireduce);
 typed_unary_ins!(cl_ins_uextend, uextend);
 typed_unary_ins!(cl_ins_sextend, sextend);
+typed_unary_ins!(cl_ins_splat, splat);
+binary_ins!(cl_ins_swizzle, swizzle);
+
+#[no_mangle]
+pub unsafe extern "C" fn cl_ins_extractlane(builder: *mut FunctionBuilder<'static>, vector: u32, lane: u8) -> u32 {
+    (*builder).ins().extractlane(Value::from_u32(vector), lane).as_u32()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn cl_ins_insertlane(builder: *mut FunctionBuilder<'static>, vector: u32, value: u32, lane: u8) -> u32 {
+    (*builder).ins().insertlane(Value::from_u32(vector), Value::from_u32(value), lane).as_u32()
+}
+
+// copy the immediate bytes into the function so the caller need not retain the mask
+#[no_mangle]
+pub unsafe extern "C" fn cl_ins_shuffle(builder: *mut FunctionBuilder<'static>, left: u32, right: u32, mask: *const u8) -> u32 {
+    if mask.is_null() { error("shuffle mask must contain 16 bytes"); return INVALID }
+    let mask = std::slice::from_raw_parts(mask, 16);
+    if mask.iter().any(|&index| index >= 32) { error("shuffle mask index must be less than 32"); return INVALID }
+    let builder = &mut *builder;
+    let immediate = builder.func.dfg.immediates.push(mask.into());
+    builder.ins().shuffle(Value::from_u32(left), Value::from_u32(right), immediate).as_u32()
+}
 
 // reinterpret bits using the function local flags just as load and store do
 #[no_mangle]

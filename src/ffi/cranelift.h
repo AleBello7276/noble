@@ -155,6 +155,178 @@ inline Type F128() noexcept {
     return cl_type_f128();
 }
 
+// fixed vector types with instruction support depending on the target backend and cpu features
+// f16 and f128 lanes have limited backend support
+// return the cranelift i8x2 type with 2 i8 lanes
+inline Type I8X2() noexcept {
+    return cl_type_i8x2();
+}
+
+// return the cranelift i8x4 type with 4 i8 lanes
+inline Type I8X4() noexcept {
+    return cl_type_i8x4();
+}
+
+// return the cranelift i16x2 type with 2 i16 lanes
+inline Type I16X2() noexcept {
+    return cl_type_i16x2();
+}
+
+// return the cranelift f16x2 type with 2 f16 lanes
+inline Type F16X2() noexcept {
+    return cl_type_f16x2();
+}
+
+// return the cranelift i8x8 type with 8 i8 lanes
+inline Type I8X8() noexcept {
+    return cl_type_i8x8();
+}
+
+// return the cranelift i16x4 type with 4 i16 lanes
+inline Type I16X4() noexcept {
+    return cl_type_i16x4();
+}
+
+// return the cranelift i32x2 type with 2 i32 lanes
+inline Type I32X2() noexcept {
+    return cl_type_i32x2();
+}
+
+// return the cranelift f16x4 type with 4 f16 lanes
+inline Type F16X4() noexcept {
+    return cl_type_f16x4();
+}
+
+// return the cranelift f32x2 type with 2 f32 lanes
+inline Type F32X2() noexcept {
+    return cl_type_f32x2();
+}
+
+// return the cranelift i8x16 type with 16 i8 lanes
+inline Type I8X16() noexcept {
+    return cl_type_i8x16();
+}
+
+// return the cranelift i16x8 type with 8 i16 lanes
+inline Type I16X8() noexcept {
+    return cl_type_i16x8();
+}
+
+// return the cranelift i32x4 type with 4 i32 lanes
+inline Type I32X4() noexcept {
+    return cl_type_i32x4();
+}
+
+// return the cranelift i64x2 type with 2 i64 lanes
+inline Type I64X2() noexcept {
+    return cl_type_i64x2();
+}
+
+// return the cranelift f16x8 type with 8 f16 lanes
+inline Type F16X8() noexcept {
+    return cl_type_f16x8();
+}
+
+// return the cranelift f32x4 type with 4 f32 lanes
+inline Type F32X4() noexcept {
+    return cl_type_f32x4();
+}
+
+// return the cranelift f64x2 type with 2 f64 lanes
+inline Type F64X2() noexcept {
+    return cl_type_f64x2();
+}
+
+// return the cranelift i8x32 type with 32 i8 lanes
+inline Type I8X32() noexcept {
+    return cl_type_i8x32();
+}
+
+// return the cranelift i16x16 type with 16 i16 lanes
+inline Type I16X16() noexcept {
+    return cl_type_i16x16();
+}
+
+// return the cranelift i32x8 type with 8 i32 lanes
+inline Type I32X8() noexcept {
+    return cl_type_i32x8();
+}
+
+// return the cranelift i64x4 type with 4 i64 lanes
+inline Type I64X4() noexcept {
+    return cl_type_i64x4();
+}
+
+// return the cranelift i128x2 type with 2 i128 lanes
+inline Type I128X2() noexcept {
+    return cl_type_i128x2();
+}
+
+// return the cranelift f16x16 type with 16 f16 lanes
+inline Type F16X16() noexcept {
+    return cl_type_f16x16();
+}
+
+// return the cranelift f32x8 type with 8 f32 lanes
+inline Type F32X8() noexcept {
+    return cl_type_f32x8();
+}
+
+// return the cranelift f64x4 type with 4 f64 lanes
+inline Type F64X4() noexcept {
+    return cl_type_f64x4();
+}
+
+// return the cranelift f128x2 type with 2 f128 lanes
+inline Type F128X2() noexcept {
+    return cl_type_f128x2();
+}
+
+// return the cranelift i8x64 type with 64 i8 lanes
+inline Type I8X64() noexcept {
+    return cl_type_i8x64();
+}
+
+// return the cranelift i16x32 type with 32 i16 lanes
+inline Type I16X32() noexcept {
+    return cl_type_i16x32();
+}
+
+// return the cranelift i32x16 type with 16 i32 lanes
+inline Type I32X16() noexcept {
+    return cl_type_i32x16();
+}
+
+// return the cranelift i64x8 type with 8 i64 lanes
+inline Type I64X8() noexcept {
+    return cl_type_i64x8();
+}
+
+// return the cranelift i128x4 type with 4 i128 lanes
+inline Type I128X4() noexcept {
+    return cl_type_i128x4();
+}
+
+// return the cranelift f16x32 type with 32 f16 lanes
+inline Type F16X32() noexcept {
+    return cl_type_f16x32();
+}
+
+// return the cranelift f32x16 type with 16 f32 lanes
+inline Type F32X16() noexcept {
+    return cl_type_f32x16();
+}
+
+// return the cranelift f64x8 type with 8 f64 lanes
+inline Type F64X8() noexcept {
+    return cl_type_f64x8();
+}
+
+// return the cranelift f128x4 type with 4 f128 lanes
+inline Type F128X4() noexcept {
+    return cl_type_f128x4();
+}
+
 // return i8 i16 i32 i64 or i128 for the requested bit width
 // return INVALID and set last_error for an unsupported width
 inline Type Integer(std::uint16_t bits) noexcept {
@@ -685,7 +857,8 @@ public:
     // borrow the active function builder for instruction insertion
     explicit InstBuilder(ClFunctionBuilder* builder) noexcept : builder_(builder) {}
 
-    // insert an integer constant with the given type
+    // insert a scalar i8 i16 i32 or i64 constant and use splat for vector constants
+    // return INVALID_ID and set last_error for an unsupported type
     Value iconst(Type type, std::int64_t immediate) const noexcept {
         return Value{cl_ins_iconst(builder_, type, immediate)};
     }
@@ -794,6 +967,33 @@ public:
     // specify endianness when vector lane counts differ and use builder memflags_new for scalar casts
     Value bitcast(Type type, MemFlags flags, Value value) const noexcept {
         return Value{cl_ins_bitcast(builder_, type, flags, value.raw())};
+    }
+
+    // replicate a scalar into every lane of the requested vector type whose lane type must match value
+    Value splat(Type type, Value value) const noexcept {
+        return Value{cl_ins_splat(builder_, type, value.raw())};
+    }
+
+    // extract a scalar lane using a constant index less than the vector lane count
+    Value extractlane(Value vector, std::uint8_t lane) const noexcept {
+        return Value{cl_ins_extractlane(builder_, vector.raw(), lane)};
+    }
+
+    // replace a lane using a matching scalar value and a constant index less than the vector lane count
+    Value insertlane(Value vector, Value value, std::uint8_t lane) const noexcept {
+        return Value{cl_ins_insertlane(builder_, vector.raw(), value.raw(), lane)};
+    }
+
+    // shuffle two i8x16 vectors using 16 immediate indices copied into the function
+    // indices 0 through 15 select left and 16 through 31 select right
+    // return INVALID_ID and set last_error for an index outside 0 through 31
+    Value shuffle(Value left, Value right, const std::array<std::uint8_t, 16>& mask) const noexcept {
+        return Value{cl_ins_shuffle(builder_, left.raw(), right.raw(), mask.data())};
+    }
+
+    // permute i8x16 bytes using i8x16 runtime indices with indices above 15 producing zero
+    Value swizzle(Value vector, Value indices) const noexcept {
+        return Value{cl_ins_swizzle(builder_, vector.raw(), indices.raw())};
     }
 
     // copy the sign bit of right onto left without changing the other bits

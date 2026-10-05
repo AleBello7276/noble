@@ -387,3 +387,11 @@ cranelift::Value EmitterContext::load_msr() {
 void EmitterContext::store_msr(cranelift::Value value) {
     ins().store(builder.memflags_new(), value, vCpuState, offsetof(PPCContext, MSR));
 }
+
+cranelift::Value EmitterContext::load_vr(uint32_t index, cranelift::Type type) {
+    return ins().load(type, builder.memflags_new(), vCpuState, VROffset(index));
+}
+
+void EmitterContext::store_vr(size_t index, cranelift::Value value) {
+    ins().store(builder.memflags_new(), value, vCpuState, VROffset(index));
+}

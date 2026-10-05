@@ -7,7 +7,7 @@
 #include "cl_fpu.h"
 #include "cl_memory.h"
 #include "cl_system.h"
-
+#include "cl_vxu.h"
 
 CLHandler(illegal) {
     // LOG_ERROR("illegal instruction ==>");
