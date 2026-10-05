@@ -89,6 +89,9 @@ inline Value half_to_f32(EmitterContext& e_, Value half) {
 
 inline Value emit_vupkd3d(EmitterContext& e_, Value source, uint32_t type) {
     const Value zero = e_.ins().splat(types::I8X16(), e_.i8(0));
+    // interpret shuffled bytes as host vector lanes with the least significant byte first
+    const MemFlags lane_flags = e_.builder.memflags_with_endianness(
+        e_.builder.memflags_new(), Endianness::CL_ENDIANNESS_LITTLE);
 
     switch (type) {
     case 0: {
@@ -97,7 +100,7 @@ inline Value emit_vupkd3d(EmitterContext& e_, Value source, uint32_t type) {
         };
 
         Value value = e_.ins().shuffle(source, zero, mask);
-        value = e_.ins().bitcast(types::I32X4(), MemFlags{}, value);
+        value = e_.ins().bitcast(types::I32X4(), lane_flags, value);
 
         return e_.ins().bor(value, e_.ins().splat(types::I32X4(), e_.i32(0x3F800000u)));
     }
@@ -108,7 +111,7 @@ inline Value emit_vupkd3d(EmitterContext& e_, Value source, uint32_t type) {
         };
 
         Value value = e_.ins().shuffle(source, zero, mask);
-        value = e_.ins().bitcast(types::I32X4(), MemFlags{}, value);
+        value = e_.ins().bitcast(types::I32X4(), lane_flags, value);
         value = e_.ins().sshr_imm_u(e_.ins().ishl_imm_u(value, 16), 16);
 
         const Value base
@@ -120,7 +123,7 @@ inline Value emit_vupkd3d(EmitterContext& e_, Value source, uint32_t type) {
     }
 
     case 2: {
-        const Value words = e_.ins().bitcast(types::I32X4(), MemFlags{}, source);
+        const Value words = e_.ins().bitcast(types::I32X4(), lane_flags, source);
         const Value packed = e_.ins().extractlane(words, 3);
 
         Value x = e_.ins().band_imm_u(packed, 0x3FF);
@@ -148,7 +151,7 @@ inline Value emit_vupkd3d(EmitterContext& e_, Value source, uint32_t type) {
         };
 
         const Value shuffled = e_.ins().shuffle(source, zero, mask);
-        const Value halves = e_.ins().bitcast(types::I16X8(), MemFlags{}, shuffled);
+        const Value halves = e_.ins().bitcast(types::I16X8(), lane_flags, shuffled);
 
         const Value x = half_to_f32(e_, e_.ins().extractlane(halves, 0));
         const Value y = half_to_f32(e_, e_.ins().extractlane(halves, 1));
@@ -162,7 +165,7 @@ inline Value emit_vupkd3d(EmitterContext& e_, Value source, uint32_t type) {
         };
 
         Value value = e_.ins().shuffle(source, zero, mask);
-        value = e_.ins().bitcast(types::I32X4(), MemFlags{}, value);
+        value = e_.ins().bitcast(types::I32X4(), lane_flags, value);
         value = e_.ins().sshr_imm_u(e_.ins().ishl_imm_u(value, 16), 16);
         value = e_.ins().iadd(value, e_.ins().splat(types::I32X4(), e_.i32(0x40400000u)));
 
@@ -175,7 +178,7 @@ inline Value emit_vupkd3d(EmitterContext& e_, Value source, uint32_t type) {
         };
 
         const Value shuffled = e_.ins().shuffle(source, zero, mask);
-        const Value halves = e_.ins().bitcast(types::I16X8(), MemFlags{}, shuffled);
+        const Value halves = e_.ins().bitcast(types::I16X8(), lane_flags, shuffled);
 
         return make_f32x4(e_, half_to_f32(e_, e_.ins().extractlane(halves, 0)),
                           half_to_f32(e_, e_.ins().extractlane(halves, 1)),
@@ -189,7 +192,7 @@ inline Value emit_vupkd3d(EmitterContext& e_, Value source, uint32_t type) {
         };
 
         Value value = e_.ins().shuffle(source, zero, mask);
-        value = e_.ins().bitcast(types::I32X4(), MemFlags{}, value);
+        value = e_.ins().bitcast(types::I32X4(), lane_flags, value);
 
         const Value shifted = e_.ins().ushr_imm_u(value, 4);
 

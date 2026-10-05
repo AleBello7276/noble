@@ -18,6 +18,18 @@ struct XexHeader {
 };
 static_assert(sizeof(XexHeader) == 0x18);
 
+// counted ansi string referencing guest memory without owning or copying the character buffer
+struct AnsiString {
+    be<uint16_t> length;
+    be<uint16_t> maximumLength;
+    GuestPointer<const char> buffer;
+};
+static_assert(sizeof(AnsiString) == 8);
+static_assert(offsetof(AnsiString, buffer) == 4);
+
+// initialize an ansi descriptor from an optional terminated source without allocating or copying it
+void RtlInitAnsiString(Memory& memory, Pointer<AnsiString> destination, Pointer<const char> source);
+
 // guest critical section layout with scalar fields encoded big endian
 struct CriticalSection {
     uint8_t type;

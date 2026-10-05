@@ -692,6 +692,19 @@ pub unsafe extern "C" fn cl_ins_iconst(builder: *mut FunctionBuilder<'static>, v
     (*builder).ins().iconst(value_type, immediate).as_u32()
 }
 
+// copy the bytes into the function constant pool before emitting the native instruction
+#[no_mangle]
+pub unsafe extern "C" fn cl_ins_vconst(builder: *mut FunctionBuilder<'static>, value_type: u16, bytes: *const u8, len: usize) -> u32 {
+    let value_type = ty(value_type);
+    if !value_type.is_vector() { error("vconst requires a fixed vector type"); return INVALID }
+    if len != value_type.bytes() as usize { error("vconst byte count must match the vector size"); return INVALID }
+    if bytes.is_null() { error("vconst bytes must not be null"); return INVALID }
+    let bytes = std::slice::from_raw_parts(bytes, len);
+    let builder = &mut *builder;
+    let constant = builder.func.dfg.constants.insert(bytes.into());
+    builder.ins().vconst(value_type, constant).as_u32()
+}
+
 macro_rules! binary_ins {
     ($name:ident, $method:ident) => {
         #[no_mangle]

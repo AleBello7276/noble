@@ -863,6 +863,13 @@ public:
         return Value{cl_ins_iconst(builder_, type, immediate)};
     }
 
+    // create a fixed vector constant from bytes copied into the function constant pool
+    // the byte count must match the vector size and instruction support depends on the target backend
+    // return INVALID_ID and set last_error for a scalar type wrong size or null bytes
+    Value vconst(Type type, std::span<const std::uint8_t> bytes) const noexcept {
+        return Value{cl_ins_vconst(builder_, type, bytes.data(), bytes.size())};
+    }
+
     // insert an f32 constant from its bit pattern
     Value f32const(std::uint32_t bits) const noexcept { return Value{cl_ins_f32const(builder_, bits)}; }
 

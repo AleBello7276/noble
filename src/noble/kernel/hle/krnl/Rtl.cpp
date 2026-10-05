@@ -88,6 +88,27 @@ uint32_t RtlNtStatusToDosError(uint32_t status) {
 }
 
 
+// count accessible guest characters with room for the terminator in the 16 bit maximum length
+void RtlInitAnsiString(Memory& memory, Pointer<AnsiString> destination, Pointer<const char> source) {
+    AnsiString string{};
+    string.buffer = source.guest_address();
+    if (source) {
+        constexpr uint32_t maximumLength = UINT16_MAX - 1;
+        uint32_t length = 0;
+        while (length < maximumLength) {
+            const uint64_t address = uint64_t(source.guest_address()) + length;
+            if (address > UINT32_MAX)
+                throw std::out_of_range("ansi string exceeds guest address space");
+            if (*Pointer<const char>(memory, static_cast<GuestAddress>(address)) == '\0')
+                break;
+            ++length;
+        }
+        string.length = static_cast<uint16_t>(length);
+        string.maximumLength = static_cast<uint16_t>(length + 1);
+    }
+    *destination = string;
+}
+
 void RtlInitializeCriticalSection(Pointer<CriticalSection> section) {
     *section = MakeCriticalSection();
 }
@@ -160,6 +181,7 @@ uint32_t RtlImageXexHeaderField(Memory& memory, Pointer<const XexHeader> header,
 }
 
 constexpr std::array exports{
+    Bind<&RtlInitAnsiString>(XboxLibrary::XboxKrnl, "RtlInitAnsiString"),
     Bind<&RtlEnterCriticalSection>(XboxLibrary::XboxKrnl, "RtlEnterCriticalSection"),
     Bind<&RtlTryEnterCriticalSection>(XboxLibrary::XboxKrnl, "RtlTryEnterCriticalSection"),
     Bind<&RtlLeaveCriticalSection>(XboxLibrary::XboxKrnl, "RtlLeaveCriticalSection"),

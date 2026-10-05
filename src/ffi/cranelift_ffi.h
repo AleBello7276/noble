@@ -309,6 +309,10 @@ ClGlobalValue cl_builder_declare_data_in_func(const ClJitModule* module, ClDataI
 // insert a scalar i8 i16 i32 or i64 constant and use splat for vector constants
 // return the invalid value and set last_error for an unsupported type
 ClValue cl_ins_iconst(ClFunctionBuilder* builder, ClType type, int64_t immediate);
+// create a fixed vector constant from readable bytes copied into the function constant pool
+// len must match the vector size in bytes and instruction support depends on the target backend
+// return the invalid value and set last_error for a scalar type wrong size or null bytes
+ClValue cl_ins_vconst(ClFunctionBuilder* builder, ClType type, const uint8_t* bytes, size_t len);
 ClValue cl_ins_f32const(ClFunctionBuilder* builder, uint32_t bits);
 ClValue cl_ins_f64const(ClFunctionBuilder* builder, uint64_t bits);
 ClValue cl_ins_symbol_value(ClFunctionBuilder* builder, ClType type, ClGlobalValue global);
