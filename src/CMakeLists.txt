@@ -31,6 +31,7 @@ set(Emulator
 
 set(Cpu
     noble/debugger/Debugger.cpp
+    noble/diagnostics/Performance.cpp
     noble/cpu/Scheduler.cpp
     noble/cpu/CpuExecutor.cpp
     noble/cpu/cl/CraneliftJIT.cpp
@@ -148,6 +149,8 @@ target_include_directories(noble_trace PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/noble)
 
 add_executable(noble-debug frontends/debugger/main.cpp)
 target_link_libraries(noble-debug PRIVATE noble_runtime)
+add_executable(noble-profile frontends/profile/main.cpp)
+target_link_libraries(noble-profile PRIVATE noble_runtime noble_trace)
 
 if(NOBLE_BUILD_TUI)
     if(NOT EXISTS "${CMAKE_SOURCE_DIR}/third_party/ftxui/CMakeLists.txt")
