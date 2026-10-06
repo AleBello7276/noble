@@ -30,13 +30,25 @@ CraneliftJIT::CraneliftJIT(Memory& memory, bool debugging, const config::JITConf
     if (!config_.branchBudget || config_.branchBudget > INT32_MAX)
         throw std::invalid_argument("jit branch budget must be between 1 and 2147483647");
 
-    const std::string optimization = config::Name(config_.optimization);
-    std::vector<const char*> names{"opt_level", "enable_verifier"};
-    std::vector<const char*> values{optimization.c_str(), config_.verifyPasses ? "true" : "false"};
+    if (config_.minFunctionAlignmentLog2 > 12)
+        throw std::invalid_argument("jit minimum function alignment must be between 0 and 12");
+    std::map<std::string, std::string> flags{
+        {"opt_level", config::Name(config_.optimization)},
+        {"enable_verifier", config_.verifyPasses ? "true" : "false"},
+        {"regalloc_algorithm", config::Name(config_.registerAllocation)},
+        {"enable_alias_analysis", config_.aliasAnalysis ? "true" : "false"},
+        {"preserve_frame_pointers", config_.preserveFramePointers ? "true" : "false"},
+        {"log2_min_function_alignment", std::to_string(config_.minFunctionAlignmentLog2)},
+    };
 
     for (const auto& [name, value] : config_.flags) {
-        if (name == "opt_level" || name == "enable_verifier")
+        if (flags.contains(name))
             throw std::invalid_argument("use the typed jit setting for " + name);
+        flags.emplace(name, value);
+    }
+
+    std::vector<const char*> names, values;
+    for (const auto& [name, value] : flags) {
         names.push_back(name.c_str());
         values.push_back(value.c_str());
     }

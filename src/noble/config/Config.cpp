@@ -1,13 +1,22 @@
 #include "Config.h"
 #include <algorithm>
 #include <array>
-#include <cstdlib>
+#include <fstream>
 #include <functional>
 #include <sstream>
 #include <stdexcept>
+#include <system_error>
 #include <toml++/toml.hpp>
-#include <tuple>
 #include <type_traits>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
 
 namespace config {
 
@@ -42,6 +51,15 @@ const char* Name(Optimization value) {
     }
     throw std::invalid_argument("invalid optimization mode");
 }
+const char* Name(RegisterAllocation value) {
+    switch (value) {
+    case RegisterAllocation::Backtracking:
+        return "backtracking";
+    case RegisterAllocation::SinglePass:
+        return "single_pass";
+    }
+    throw std::invalid_argument("invalid register allocation algorithm");
+}
 
 namespace {
 
@@ -58,9 +76,9 @@ T Read(const toml::node& node) {
             return value->get();
         throw std::invalid_argument("expected a boolean");
     } else if constexpr (std::is_same_v<T, uint32_t>) {
-        if (const auto* value = node.as_integer(); value && value->get() > 0 && value->get() <= INT32_MAX)
+        if (const auto* value = node.as_integer(); value && value->get() >= 0 && value->get() <= UINT32_MAX)
             return static_cast<uint32_t>(value->get());
-        throw std::invalid_argument("expected an integer between 1 and 2147483647");
+        throw std::invalid_argument("expected an unsigned 32-bit integer");
     } else {
         const auto* value = node.as_string();
         if (!value)
@@ -78,6 +96,11 @@ T Read(const toml::node& node) {
                 if (name == Name(option))
                     return option;
             throw std::invalid_argument("expected blocks or functions");
+        } else if constexpr (std::is_same_v<T, RegisterAllocation>) {
+            for (const auto option : {RegisterAllocation::Backtracking, RegisterAllocation::SinglePass})
+                if (name == Name(option))
+                    return option;
+            throw std::invalid_argument("expected backtracking or single_pass");
         } else {
             for (const auto option : {Optimization::None, Optimization::Speed, Optimization::SpeedAndSize})
                 if (name == Name(option))
@@ -91,13 +114,23 @@ struct Option {
     std::string_view key, description;
     std::function<void(Settings&, const toml::node&)> set;
     std::function<std::string(Settings)> get;
+    bool inheritedDefault;
 };
 
 template <typename Accessor>
-Option Bind(std::string_view key, std::string_view description, Accessor member) {
+Option Bind(std::string_view key, std::string_view description, Accessor member,
+            bool inheritedDefault = false, uint32_t minimum = 0, uint32_t maximum = UINT32_MAX) {
     using T = std::remove_reference_t<decltype(member(std::declval<Settings&>()))>;
     return {key, description,
-            [member](Settings& settings, const toml::node& node) { member(settings) = Read<T>(node); },
+            [member, minimum, maximum](Settings& settings, const toml::node& node) {
+                const auto value = Read<T>(node);
+                if constexpr (std::is_same_v<T, uint32_t>) {
+                    if (value < minimum || value > maximum)
+                        throw std::invalid_argument("expected an integer between " + std::to_string(minimum)
+                                                    + " and " + std::to_string(maximum));
+                }
+                member(settings) = value;
+            },
             [member](Settings settings) {
                 const auto value = member(settings);
                 if constexpr (std::is_same_v<T, bool>)
@@ -108,7 +141,8 @@ Option Bind(std::string_view key, std::string_view description, Accessor member)
                     return Quote(value);
                 else
                     return Quote(Name(value));
-            }};
+            },
+            inheritedDefault};
 }
 
 // add a typed field and one binding here to expose a new setting to files and command-line overrides
@@ -117,42 +151,118 @@ const auto options = std::array{
          [](Settings& s) -> auto& { return s.jit.preset; }),
     Bind("jit.compilation", "compile bounded blocks or legacy function regions",
          [](Settings& s) -> auto& { return s.jit.compilation; }),
-    Bind("jit.branch_budget", "return to the dispatcher after this many native backward edges",
-         [](Settings& s) -> auto& { return s.jit.branchBudget; }),
+    Bind(
+        "jit.branch_budget", "return to the dispatcher after this many native backward edges",
+        [](Settings& s) -> auto& { return s.jit.branchBudget; }, false, 1, INT32_MAX),
     Bind("jit.dump_ir", "log generated cranelift ir before compilation",
          [](Settings& s) -> auto& { return s.jit.dumpIR; }),
-    Bind("jit.cranelift.opt_level", "none, speed or speed_and_size",
-         [](Settings& s) -> auto& { return s.jit.optimization; }),
-    Bind("jit.cranelift.enable_verifier",
-         "verify between compiler passes in addition to mandatory input verification",
-         [](Settings& s) -> auto& { return s.jit.verifyPasses; }),
+    Bind(
+        "jit.cranelift.opt_level", "none, speed or speed_and_size",
+        [](Settings& s) -> auto& { return s.jit.optimization; }, true),
+    Bind(
+        "jit.cranelift.enable_verifier",
+        "verify between compiler passes in addition to mandatory input verification",
+        [](Settings& s) -> auto& { return s.jit.verifyPasses; }, true),
+    Bind("jit.cranelift.regalloc_algorithm",
+         "backtracking for code quality or single_pass for lower compilation latency with more spills and "
+         "moves",
+         [](Settings& s) -> auto& { return s.jit.registerAllocation; }),
+    Bind("jit.cranelift.enable_alias_analysis",
+         "remove redundant loads with speed or speed_and_size, has no effect with opt_level none",
+         [](Settings& s) -> auto& { return s.jit.aliasAnalysis; }),
+    Bind("jit.cranelift.preserve_frame_pointers",
+         "retain native frame pointers for compatible sampling profilers and stack walkers",
+         [](Settings& s) -> auto& { return s.jit.preserveFramePointers; }),
+    Bind(
+        "jit.cranelift.log2_min_function_alignment",
+        "minimum alignment as a power of two from 0 to 12, zero keeps backend defaults, benchmark padding "
+        "and code footprint",
+        [](Settings& s) -> auto& { return s.jit.minFunctionAlignmentLog2; }, false, 0, 12),
     Bind("diagnostics.profiling", "collect process-wide worker phase timings",
          [](Settings& s) -> auto& { return s.diagnostics.profiling; }),
     Bind("diagnostics.execution_trace", "record block execution events when a trace sink is attached",
          [](Settings& s) -> auto& { return s.diagnostics.executionTrace; }),
     Bind("debugger.enabled", "attach instruction checkpoints before compiling guest code",
          [](Settings& s) -> auto& { return s.debugger.enabled; }),
-    Bind("debugger.break_on_entry", "pause newly scheduled threads until continued",
-         [](Settings& s) -> auto& { return s.debugger.breakOnEntry; })};
+    Bind(
+        "debugger.break_on_entry", "pause newly scheduled threads until continued",
+        [](Settings& s) -> auto& { return s.debugger.breakOnEntry; }, true)};
 
 struct Layer {
     std::string source;
     toml::table table;
 };
 
-std::string Environment(const char* name) {
+// resolve the running executable rather than relying on the working directory or argv[0]
+std::filesystem::path DefaultPath() {
 #ifdef _WIN32
-    char* value = nullptr;
-    size_t size = 0;
-    if (_dupenv_s(&value, &size, name) != 0)
-        throw std::runtime_error("unable to read configuration environment");
-    const std::string result = value ? value : "";
-    std::free(value);
-    return result;
+    std::vector<wchar_t> buffer(512);
+    for (;;) {
+        const DWORD size = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+        if (!size)
+            throw std::system_error(GetLastError(), std::system_category(), "unable to locate executable");
+        if (size < buffer.size())
+            return std::filesystem::path(std::wstring(buffer.data(), size)).parent_path() / "noble.toml";
+        buffer.resize(buffer.size() * 2);
+    }
+#elif defined(__APPLE__)
+    uint32_t size = 0;
+    _NSGetExecutablePath(nullptr, &size);
+    std::vector<char> buffer(size);
+    if (_NSGetExecutablePath(buffer.data(), &size) != 0)
+        throw std::runtime_error("unable to locate executable");
+    return std::filesystem::canonical(buffer.data()).parent_path() / "noble.toml";
+#elif defined(__linux__)
+    return std::filesystem::read_symlink("/proc/self/exe").parent_path() / "noble.toml";
+#elif defined(__FreeBSD__)
+    return std::filesystem::read_symlink("/proc/curproc/file").parent_path() / "noble.toml";
 #else
-    const char* value = std::getenv(name);
-    return value ? value : "";
+#error executable path discovery needs an implementation for this platform
 #endif
+}
+
+std::string PathName(const std::filesystem::path& path) {
+    const auto utf8 = path.u8string();
+    return std::string(utf8.begin(), utf8.end());
+}
+
+// derive the initial file from the same definitions used to load and describe settings
+std::string DefaultFile() {
+    std::string result = "# noble session settings\n# edit this file before starting a new session\n\n";
+    std::string section;
+    for (const auto& option : options) {
+        const auto split = option.key.rfind('.');
+        const std::string next(option.key.substr(0, split));
+        if (section != next) {
+            section = next;
+            result += "[" + section + "]\n\n";
+        }
+        const auto value = option.get(Settings{});
+        result += "# " + std::string(option.description) + "\n# default: " + value + "\n";
+        if (option.inheritedDefault) {
+            result += "# leave commented to inherit the preset or frontend default\n# ";
+        }
+        result += std::string(option.key.substr(split + 1)) + " = " + value + "\n\n";
+    }
+    result += "[jit.cranelift.flags]\n# additional cranelift flags may be strings, booleans or integers\n"
+              "# names and values are checked by cranelift during initialization\n"
+              "# prefer the typed tuning options above when available\n"
+              "# regalloc_checker = true\n";
+    return result;
+}
+
+void CreateDefaults(const std::filesystem::path& path) {
+    // exclusive creation preserves an existing file if another launch creates it first
+    std::ofstream file(path, std::ios::out | std::ios::binary | std::ios::noreplace);
+    if (!file) {
+        if (std::filesystem::exists(path))
+            return;
+        throw std::runtime_error("unable to create default configuration: " + PathName(path));
+    }
+    file << DefaultFile();
+    file.close();
+    if (!file)
+        throw std::runtime_error("unable to write default configuration: " + PathName(path));
 }
 
 std::string Flag(const toml::node& node) {
@@ -176,6 +286,18 @@ void Apply(LoadedSettings& result, const toml::table& table, const std::string& 
             if (prefix == "jit.cranelift.flags") {
                 if (key.str() == "opt_level" || key.str() == "enable_verifier")
                     throw std::invalid_argument("use the typed jit.cranelift setting for this flag");
+                // normalize previously supported raw flags into their new typed settings
+                const auto canonical = "jit.cranelift." + std::string(key.str());
+                const auto typed = std::find_if(options.begin(), options.end(),
+                                                [&](const auto& option) { return option.key == canonical; });
+                if (typed != options.end()) {
+                    const auto value = Flag(node);
+                    const auto converted = toml::parse(
+                        "value = " + (key.str() == "regalloc_algorithm" ? Quote(value) : value));
+                    typed->set(result.values, *converted.get("value"));
+                    result.sources[canonical] = source + " (flags table)";
+                    continue;
+                }
                 result.values.jit.flags.insert_or_assign(std::string(key.str()), Flag(node));
             } else if (binding != options.end()) {
                 binding->set(result.values, node);
@@ -204,26 +326,22 @@ void Apply(LoadedSettings& result, const toml::table& table, const std::string& 
 
 LoadedSettings Load(const LoadOptions& input) {
     std::vector<Layer> layers;
-    auto file = [&](const std::filesystem::path& path, bool required) {
+    const auto mainFile = input.file.empty() ? DefaultPath() : input.file;
+    if (input.file.empty() && !std::filesystem::exists(mainFile))
+        CreateDefaults(mainFile);
+    auto file = [&](const std::filesystem::path& path) {
         if (path.empty())
             return;
-        if (!required && !std::filesystem::exists(path))
-            return;
-        layers.push_back({path.string(), toml::parse_file(path.string())});
+        std::ifstream stream(path, std::ios::binary);
+        if (!stream)
+            throw std::runtime_error("unable to read configuration: " + PathName(path));
+        const std::string content{std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
+        if (stream.bad())
+            throw std::runtime_error("unable to read configuration: " + PathName(path));
+        layers.push_back({PathName(path), toml::parse(content, PathName(path))});
     };
-    file(input.file, input.requireFile);
-    file(input.titleFile, !input.titleFile.empty());
-    if (input.readEnvironment) {
-        for (const auto& [name, key, quoted] :
-             {std::tuple{"NOBLE_JIT_OPT_LEVEL", "jit.cranelift.opt_level", true},
-              std::tuple{"NOBLE_JIT_COMPILATION", "jit.compilation", true},
-              std::tuple{"NOBLE_JIT_VERIFY_PASSES", "jit.cranelift.enable_verifier", false}}) {
-            const auto value = Environment(name);
-            if (!value.empty())
-                layers.push_back({std::string("environment ") + name,
-                                  toml::parse(std::string(key) + " = " + (quoted ? Quote(value) : value))});
-        }
-    }
+    file(mainFile);
+    file(input.titleFile);
     for (const auto& value : input.overrides)
         layers.push_back({"command line --set " + value, toml::parse(value)});
 
@@ -277,6 +395,8 @@ LaunchOptions ParseLaunch(int argc, char* argv[], Frontend frontend, std::string
         auto value = [&]() -> std::string {
             if (++i >= argc)
                 throw std::invalid_argument(std::string(arg) + " requires a value");
+            if (!*argv[i])
+                throw std::invalid_argument(std::string(arg) + " requires a nonempty value");
             return argv[i];
         };
         if (arg == "--help" || arg == "-h")
@@ -285,7 +405,6 @@ LaunchOptions ParseLaunch(int argc, char* argv[], Frontend frontend, std::string
             result.printConfig = true;
         else if (arg == "--config") {
             input.file = value();
-            input.requireFile = true;
         } else if (arg == "--title-config")
             input.titleFile = value();
         else if (arg == "--set")
@@ -327,7 +446,7 @@ LaunchOptions ParseLaunch(int argc, char* argv[], Frontend frontend, std::string
 std::string Help(std::string_view program) {
     return "usage: " + std::string(program)
            + " <title.xex> [options]\n"
-             "  --config path        load a required configuration file instead of optional noble.toml\n"
+             "  --config path        load a required file instead of noble.toml beside the executable\n"
              "  --title-config path  apply additional title settings after the main file\n"
              "  --set key=value      override a setting using a TOML value, repeatable\n"
              "  --debug              enable instruction debugger checkpoints\n"

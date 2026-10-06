@@ -8,12 +8,11 @@
 namespace config {
 
 struct LoadOptions {
-    // an absent default file is allowed but an explicit path must exist
-    std::filesystem::path file = "noble.toml";
-    bool requireFile = false;
+    // an empty path selects noble.toml beside the executable and creates documented defaults if missing
+    // an explicitly supplied file must already exist
+    std::filesystem::path file;
     std::filesystem::path titleFile;
     std::vector<std::string> overrides;
-    bool readEnvironment = true;
 };
 
 struct LoadedSettings {
@@ -23,7 +22,7 @@ struct LoadedSettings {
     std::string Describe() const;
 };
 
-// apply preset defaults then explicit file, title, environment and command-line settings
+// apply preset defaults then explicit file, title and command-line settings
 LoadedSettings Load(const LoadOptions& options = {});
 
 enum class Frontend { Normal, Debugger, Profile, TUI };

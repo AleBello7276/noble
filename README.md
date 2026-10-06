@@ -26,7 +26,7 @@ An instruction stepper is available through `noble-debug` or the optional FTXUI 
 
 ## Configuration
 
-Settings are loaded from `noble.toml` in the working directory, with optional title settings and command-line overrides
+Settings are loaded from `noble.toml` beside the executable generated on first boot
 
 ## Contributing
 if want to contribute, make a fork and a PR, also join the discord server! 

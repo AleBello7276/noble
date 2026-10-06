@@ -9,12 +9,17 @@ namespace config {
 enum class JITPreset { Development, Performance, Validation };
 enum class Compilation { Blocks, Functions };
 enum class Optimization { None, Speed, SpeedAndSize };
+enum class RegisterAllocation { Backtracking, SinglePass };
 
 // immutable session settings copied by the jit before guest workers start
 struct JITConfig {
     JITPreset preset = JITPreset::Development;
     Compilation compilation = Compilation::Blocks;
     Optimization optimization = Optimization::None;
+    RegisterAllocation registerAllocation = RegisterAllocation::Backtracking;
+    bool aliasAnalysis = true;
+    bool preserveFramePointers = false;
+    uint32_t minFunctionAlignmentLog2 = 0;
     bool verifyPasses = false;
     bool dumpIR = false;
     uint32_t branchBudget = 1024;
@@ -43,5 +48,6 @@ struct Settings {
 const char* Name(JITPreset value);
 const char* Name(Compilation value);
 const char* Name(Optimization value);
+const char* Name(RegisterAllocation value);
 
 }  // namespace config
