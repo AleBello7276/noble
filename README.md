@@ -20,6 +20,10 @@ Great question.. well those crates are Great so i don't have to reinvent the whe
 - idk that's it
 - If everything is good and i or you didn't messed up something, it should compile fine
 
+## Guest debugger
+
+An instruction stepper is available through `noble-debug` or the optional FTXUI frontend with `--debug`
+
 ## Contributing
 if want to contribute, make a fork and a PR, also join the discord server! 
 

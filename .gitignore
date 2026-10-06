@@ -19,3 +19,6 @@
 /external/llvm_build/lib
 
 /test/dolphin/*
+
+# temp
+docs/
