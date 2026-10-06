@@ -41,6 +41,11 @@ static inline void branch_call(EmitterContext& e_, InstructionInfo& info_, FuncI
 }
 
 static inline void branch(EmitterContext& e_, InstructionInfo& info_, GuestAddress NIA, bool LK) {
+    if (e_.backend && e_.backend->SingleInstruction()) {
+        branch_fallback(e_, e_.i32(NIA));
+        return;
+    }
+
     if (!LK || NIA == info_.mAddress + 4) {
         const Block label = e_.BlockLookup(NIA);
         if (label != INVALID_ID) {
@@ -58,6 +63,11 @@ static inline void branch(EmitterContext& e_, InstructionInfo& info_, GuestAddre
 }
 
 static inline void branch_indirect(EmitterContext& e_, InstructionInfo& info_, Value NIA, bool LK) {
+    if (e_.backend && e_.backend->SingleInstruction()) {
+        branch_fallback(e_, NIA);
+        return;
+    }
+
     const auto blocks = e_.clBlockMap;
 
     if (!LK) {

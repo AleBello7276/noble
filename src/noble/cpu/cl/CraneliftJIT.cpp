@@ -22,7 +22,8 @@ static uint64_t host_load_clock() {
     return HostClock::GetInstance().GetGuestTickCount();
 }
 
-CraneliftJIT::CraneliftJIT(Memory& memory) : memory_(memory), jit_module_(nullptr) {
+CraneliftJIT::CraneliftJIT(Memory& memory, bool singleInstruction)
+    : memory_(memory), singleInstruction_(singleInstruction), jit_module_(nullptr) {
     jit_builder_ = cranelift::JITBuilder();
 
     assert(jit_builder_);
@@ -317,6 +318,13 @@ void CraneliftJIT::CompileJITBlock(GuestAddress address) {
         return;
     }
 
+    if (singleInstruction_) {
+        if (address > UINT32_MAX - 4)
+            throw std::invalid_argument("debug instruction exceeds guest address space");
+        CompileFunction(PPCFuncMap{.mStart = address, .mEnd = address + 4});
+        return;
+    }
+
     // an entry inside a known function receives its own native entry at that exact address
     for (auto it = functionBounds_.upper_bound(address); it != functionBounds_.begin();) {
         --it;
@@ -341,6 +349,11 @@ void CraneliftJIT::CompileJITBlock(GuestAddress address) {
 }
 
 void CraneliftJIT::InvalidateBlock(GuestAddress address) {}
+
+bool CraneliftJIT::IsImport(GuestAddress address) const {
+    std::lock_guard lock(mutex_);
+    return importsByAddress_.contains(address);
+}
 
 void CraneliftJIT::InvalidateRegion(GuestAddress from, GuestAddress to) {}
 

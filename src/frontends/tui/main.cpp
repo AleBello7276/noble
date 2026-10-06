@@ -1,5 +1,7 @@
 #include "Logger.h"
 #include "TraceView.h"
+#include "DebuggerView.h"
+#include "debugger/Debugger.h"
 #include "emulator/Emulator.h"
 #include <atomic>
 #include <iostream>
@@ -23,15 +25,24 @@ public:
 }  // namespace
 
 int main(int argc, char* argv[]) {
-    if (argc < 2 || argc > 3 || (argc == 3 && std::string_view(argv[2]) != "--trace-execution")) {
-        std::cerr << "usage: noble-tui <title.xex> [--trace-execution]\n";
+    bool debug = false;
+    bool trace = false;
+    bool valid = argc >= 2;
+    for (int i = 2; i < argc; ++i) {
+        if (std::string_view(argv[i]) == "--debug") debug = true;
+        else if (std::string_view(argv[i]) == "--trace-execution") trace = true;
+        else valid = false;
+    }
+    if (!valid) {
+        std::cerr << "usage: noble-tui <title.xex> [--debug] [--trace-execution]\n";
         return 1;
     }
 
     diagnostics::TraceStore store;
-    store.SetExecutionEnabled(argc == 3);
+    store.SetExecutionEnabled(trace);
     TraceLogging logging(store);
-    Emulator emulator(&store);
+    debugger::Debugger debugger;
+    Emulator emulator(&store, debug ? &debugger : nullptr);
 
     if (!emulator.Initialise() || !emulator.LoadTitle(argv[1])) {
         for (const auto& recorded : store.Read().events)
@@ -53,7 +64,10 @@ int main(int argc, char* argv[]) {
 
     bool frontendFailed = false;
     try {
-        tui::RunTraceView(store, result, [&] { emulator.RequestStop(); });
+        if (debug)
+            tui::RunDebuggerView(debugger, store, [&] { emulator.RequestStop(); });
+        else
+            tui::RunTraceView(store, result, [&] { emulator.RequestStop(); });
     } catch (const std::exception& error) {
         store.Log(static_cast<uint32_t>(LogLevel::Error), error.what());
         frontendFailed = true;

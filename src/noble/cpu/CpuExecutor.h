@@ -11,6 +11,7 @@
 #include "diagnostics/Trace.h"
 
 class Memory;
+namespace debugger { class Debugger; }
 
 using GuestAddress = uint32_t;
 
@@ -23,7 +24,9 @@ struct ExecutionResult {
 
 class CpuExecutor {
 public:
-    explicit CpuExecutor(Memory& memory, diagnostics::TraceSink* trace = nullptr);
+    explicit CpuExecutor(Memory& memory, diagnostics::TraceSink* trace = nullptr,
+                         debugger::Debugger* debugger = nullptr);
+    ~CpuExecutor();
 
     // execute from cia and follow nia until termination, shutdown or a guest fault
     ExecutionResult Execute(PPCContext& context, const std::atomic_bool& terminate, std::stop_token stop);
@@ -33,5 +36,6 @@ public:
 private:
     Memory& memory_;
     diagnostics::TraceSink* trace_;
+    debugger::Debugger* debugger_;
     std::unique_ptr<JITBackend> jit_;
 };

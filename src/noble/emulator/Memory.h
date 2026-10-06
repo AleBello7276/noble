@@ -81,6 +81,9 @@ public:
     /* translate a mapped guest range to its host backing address */
     void* Translate(GuestAddress address, size_t size = 1) const;
 
+    // copy readable guest bytes while protecting their backing allocation from unmapping
+    bool ReadBytes(GuestAddress address, std::span<std::byte> destination) const;
+
     uint32_t GetPhysicalAddress(GuestAddress address) const;
 
     /* typed version of Translate for guest pointers */

@@ -79,9 +79,8 @@ bool Memory::Initialise() {
         {0xFFD00000, 0xFFD00000, 0x00300000},
     }};
     constexpr uintptr_t preferred = 0x100000000ull;
-    mMemoryBase_
-        = static_cast<uint8_t*>(Hostallocator_->ReserveAliased(reinterpret_cast<void*>(preferred),
-                                                              kXboxMemorySize, views));
+    mMemoryBase_ = static_cast<uint8_t*>(
+        Hostallocator_->ReserveAliased(reinterpret_cast<void*>(preferred), kXboxMemorySize, views));
 
     if (!mMemoryBase_) {
         LOG_FATAL("Unable to reserve guest address space");
@@ -212,8 +211,7 @@ bool Memory::AllocateFixed(GuestAddress address, size_t size) {
 bool Memory::MapDeviceMemory(GuestAddress address, size_t size) {
     constexpr uint64_t begin = 0x7F000000;
     constexpr uint64_t end = 0x80000000;
-    if (address < begin || address >= end || !size || address % 4096 || size % 4096
-        || size > end - address)
+    if (address < begin || address >= end || !size || address % 4096 || size % 4096 || size > end - address)
         return false;
 
     std::scoped_lock lock(mutex_);
@@ -258,8 +256,8 @@ bool Memory::DecommitLocked(uint64_t backing, Allocation& allocation, uint64_t o
 }
 
 VirtualFreeResult Memory::FreeVirtualRegion(GuestAddress address, uint32_t size, bool release,
-                                           GuestAddress& resultAddress, uint32_t& resultSize,
-                                           std::span<const GuestAddress> preservedOutputs) {
+                                            GuestAddress& resultAddress, uint32_t& resultSize,
+                                            std::span<const GuestAddress> preservedOutputs) {
     const auto pageSize = VirtualPageSize(address);
     if (!address)
         return VirtualFreeResult::NotAllocated;
@@ -350,6 +348,18 @@ bool Memory::IsAccessible(GuestAddress address, size_t size, bool write) const {
 
 void* Memory::Translate(uint32_t address, size_t size) const {
     return IsAccessible(address, size) ? mMemoryBase_ + BackingAddress(address) : nullptr;
+}
+
+bool Memory::ReadBytes(GuestAddress address, std::span<std::byte> destination) const {
+    std::lock_guard lock(mutex_);
+
+    if (!IsAccessibleLocked(address, destination.size(), true, false))
+        return false;
+
+    if (!destination.empty())
+        std::memcpy(destination.data(), mMemoryBase_ + BackingAddress(address), destination.size());
+
+    return true;
 }
 
 uint32_t Memory::GetPhysicalAddress(GuestAddress address) const {

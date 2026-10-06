@@ -2,8 +2,8 @@
 #include "Logger.h"
 #include <cstring>
 
-Emulator::Emulator(diagnostics::TraceSink* trace)
-    : mMemory_(), cpu_(mMemory_, trace), mScheduler_(cpu_, trace),
+Emulator::Emulator(diagnostics::TraceSink* trace, debugger::Debugger* debugger)
+    : mMemory_(), cpu_(mMemory_, trace, debugger), mScheduler_(cpu_, trace),
       mKernel_(mMemory_, mScheduler_, {}, trace) {
     cpu_.jit()->SetHLERegistry(&mKernel_.Imports());
 }

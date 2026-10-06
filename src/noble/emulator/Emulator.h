@@ -9,7 +9,7 @@
 
 class Emulator {
 public:
-    explicit Emulator(diagnostics::TraceSink* trace = nullptr);
+    explicit Emulator(diagnostics::TraceSink* trace = nullptr, debugger::Debugger* debugger = nullptr);
     ~Emulator();
 
     /* initliase the Emulator subsytems */

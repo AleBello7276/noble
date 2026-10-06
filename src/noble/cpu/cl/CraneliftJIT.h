@@ -29,7 +29,10 @@ struct JITFunction {
 
 class CraneliftJIT final : public JITBackend {
 public:
-    explicit CraneliftJIT(Memory& memory);
+    explicit CraneliftJIT(Memory& memory, bool singleInstruction = false);
+    // debugger blocks execute one guest instruction and never call another guest block directly
+    bool SingleInstruction() const { return singleInstruction_; }
+    bool IsImport(GuestAddress address) const;
 
     // copy analysis metadata and import bindings for later compilation
     void RegisterPPCModule(const PPCModule& module) override;
@@ -52,6 +55,7 @@ public:
 
 private:
     Memory& memory_;
+    const bool singleInstruction_;
     cranelift::JITModule jit_module_;
     cranelift::JITBuilder jit_builder_;
     hle::Registry* imports_ = nullptr;
