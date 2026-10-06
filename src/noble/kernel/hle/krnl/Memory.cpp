@@ -124,6 +124,48 @@ uint32_t NtAllocateVirtualMemory(Memory& memory, Pointer<be<uint32_t>, PointerVa
     return statusNoMemory;
 }
 
+XNTSTATUS NtFreeVirtualMemory(Memory& memory,
+                             Pointer<be<uint32_t>, PointerValidation::Report> baseAddress,
+                             Pointer<be<uint32_t>, PointerValidation::Report> regionSize,
+                             uint32_t freeType, [[maybe_unused]] uint32_t debugMemory) {
+    constexpr uint32_t memDecommit = 0x4000;
+    constexpr uint32_t memRelease = 0x8000;
+    if (!baseAddress.guest_address() || !regionSize.guest_address())
+        return X_STATUS_INVALID_PARAMETER;
+
+    if (!baseAddress || !regionSize)
+        return X_STATUS_ACCESS_VIOLATION;
+
+    const uint64_t basePointer = baseAddress.guest_address();
+    const uint64_t sizePointer = regionSize.guest_address();
+    if (basePointer < sizePointer + 4 && sizePointer < basePointer + 4)
+        return X_STATUS_INVALID_PARAMETER;
+
+    if (freeType != memDecommit && freeType != memRelease)
+        return X_STATUS_INVALID_PARAMETER;
+
+    GuestAddress address = 0;
+    uint32_t size = 0;
+    const std::array outputs{baseAddress.guest_address(), regionSize.guest_address()};
+    // match allocation behavior by sharing normal memory for devkit requests
+    const auto result = memory.FreeVirtualRegion(*baseAddress, *regionSize, freeType == memRelease,
+                                                address, size, outputs);
+    switch (result) {
+    case VirtualFreeResult::InvalidAddress:
+        return X_STATUS_INVALID_PARAMETER;
+    case VirtualFreeResult::NotAllocated:
+        return X_STATUS_MEMORY_NOT_ALLOCATED;
+    case VirtualFreeResult::Failed:
+        return X_STATUS_UNSUCCESSFUL;
+    case VirtualFreeResult::Success:
+        *baseAddress = address;
+        *regionSize = size;
+        return STATUS_SUCCESS;
+    }
+
+    return X_STATUS_UNSUCCESSFUL;
+}
+
 uint32_t MmAllocatePhysicalMemoryEx(Memory& memory, uint32_t flags, uint32_t regionSize, uint32_t protect,
                                     uint32_t minimum, uint32_t maximum, uint32_t alignment) {
     constexpr uint32_t supported = 0x2 | 0x4 | 0x200 | 0x400 | memLargePages | mem16MBPages;
@@ -151,6 +193,7 @@ uint32_t MmGetPhysicalAddress(Memory& memory, GuestAddress address) {
 
 constexpr std::array exports{
     Bind<&NtAllocateVirtualMemory>(XboxLibrary::XboxKrnl, "NtAllocateVirtualMemory"),
+    Bind<&NtFreeVirtualMemory>(XboxLibrary::XboxKrnl, "NtFreeVirtualMemory"),
     Bind<&MmAllocatePhysicalMemoryEx>(XboxLibrary::XboxKrnl, "MmAllocatePhysicalMemoryEx"),
     Bind<&MmGetPhysicalAddress>(XboxLibrary::XboxKrnl, "MmGetPhysicalAddress"),
 };

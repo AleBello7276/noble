@@ -229,11 +229,81 @@ bool Memory::FreeVirtual(GuestAddress address) {
     if (it == allocations_.end() || it->second.guest_address != address)
         return false;
 
-    if (!Hostallocator_->DecommitRegion(mMemoryBase_ + it->first, it->second.size))
+    if (!DecommitLocked(it->first, it->second, 0, it->second.size))
         return false;
 
     allocations_.erase(it);
     return true;
+}
+
+bool Memory::DecommitLocked(uint64_t backing, Allocation& allocation, uint64_t offset, uint64_t size) {
+    const size_t end = (offset + size) / 4096;
+    for (size_t page = offset / 4096; page < end;) {
+        if (!allocation.pages[page]) {
+            ++page;
+            continue;
+        }
+
+        const size_t first = page++;
+        while (page < end && allocation.pages[page])
+            ++page;
+
+        if (!Hostallocator_->DecommitRegion(mMemoryBase_ + backing + first * 4096, (page - first) * 4096))
+            return false;
+
+        std::fill_n(allocation.pages.begin() + first, page - first, uint8_t(0));
+    }
+
+    return true;
+}
+
+VirtualFreeResult Memory::FreeVirtualRegion(GuestAddress address, uint32_t size, bool release,
+                                           GuestAddress& resultAddress, uint32_t& resultSize,
+                                           std::span<const GuestAddress> preservedOutputs) {
+    const auto pageSize = VirtualPageSize(address);
+    if (!address)
+        return VirtualFreeResult::NotAllocated;
+
+    if (!pageSize)
+        return VirtualFreeResult::InvalidAddress;
+
+    std::scoped_lock lock(mutex_);
+    auto it = allocations_.upper_bound(address);
+    if (it == allocations_.begin())
+        return VirtualFreeResult::NotAllocated;
+
+    --it;
+    auto& allocation = it->second;
+    if (address - it->first >= allocation.size || allocation.guest_address != it->first)
+        return VirtualFreeResult::NotAllocated;
+
+    uint64_t base = uint64_t(address) / pageSize * pageSize;
+    uint64_t bytes = 0;
+    if (release || !size) {
+        if (address != it->first)
+            return VirtualFreeResult::InvalidAddress;
+
+        base = it->first;
+        bytes = allocation.size;
+    } else {
+        bytes = AlignUp(uint64_t(address) - base + size, pageSize);
+        if (base < it->first || bytes > allocation.size - (base - it->first))
+            return VirtualFreeResult::InvalidAddress;
+    }
+
+    for (const auto output : preservedOutputs)
+        if (uint64_t(output) < base + bytes && uint64_t(output) + 4 > base)
+            return VirtualFreeResult::InvalidAddress;
+
+    if (!DecommitLocked(it->first, allocation, base - it->first, bytes))
+        return VirtualFreeResult::Failed;
+
+    if (release)
+        allocations_.erase(it);
+
+    resultAddress = static_cast<GuestAddress>(base);
+    resultSize = static_cast<uint32_t>(bytes);
+    return VirtualFreeResult::Success;
 }
 
 bool Memory::IsAccessibleLocked(GuestAddress address, size_t size, bool checkAccess, bool write) const {

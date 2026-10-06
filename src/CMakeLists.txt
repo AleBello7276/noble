@@ -54,6 +54,7 @@ set(Kernel
     noble/kernel/hle/Shims.cpp
     noble/kernel/hle/Exports.cpp
     noble/kernel/hle/krnl/Threading.cpp
+    noble/kernel/hle/krnl/Debug.cpp
     noble/kernel/hle/krnl/Rtl.cpp
     noble/kernel/hle/krnl/Memory.cpp
     noble/kernel/hle/krnl/Modules.cpp

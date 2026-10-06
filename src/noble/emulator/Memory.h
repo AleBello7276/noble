@@ -6,6 +6,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <span>
 #include <vector>
 
 constexpr uint64_t AlignUp(uint64_t value, uint64_t alignment) {
@@ -18,6 +19,8 @@ enum class GuestHeapKind { Virtual4K, Virtual64K, Image64K, Image4K, Physical64K
 using GuestAddress = uint32_t;
 
 enum class VirtualAllocationResult { Success, InvalidAddress, NoMemory, Conflict };
+
+enum class VirtualFreeResult { Success, InvalidAddress, NotAllocated, Failed };
 
 /* own the guest's 32-bit address space and commit host pages for guest allocations */
 class Memory {
@@ -61,6 +64,13 @@ public:
 
     /* release an allocation using the address returned when it was created */
     bool FreeVirtual(GuestAddress address);
+
+    // release a whole virtual allocation or decommit pages while retaining its reservation
+    // round decommit ranges to guest pages and report the actual affected base and size
+    // preserve four byte output locations so an hle call cannot unmap its own result pointers
+    VirtualFreeResult FreeVirtualRegion(GuestAddress address, uint32_t size, bool release,
+                                       GuestAddress& resultAddress, uint32_t& resultSize,
+                                       std::span<const GuestAddress> preservedOutputs = {});
 
     /* check whether the full guest address range has backing pages */
     bool IsMapped(GuestAddress address, size_t size = 1) const;
@@ -109,6 +119,9 @@ private:
     // commit previously reserved pages without clearing pages that were already committed
     bool CommitLocked(uint64_t backing, Allocation& allocation, uint64_t offset, uint64_t size,
                       MemoryProtection protection);
+
+    // retire committed page runs while leaving already reserved pages untouched
+    bool DecommitLocked(uint64_t backing, Allocation& allocation, uint64_t offset, uint64_t size);
 
     bool IsAccessibleLocked(GuestAddress address, size_t size, bool checkAccess, bool write) const;
 
