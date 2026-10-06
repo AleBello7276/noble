@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Memory.h"
+#include "config/Settings.h"
 
 #include "cpu/Scheduler.h"
 #include "diagnostics/Trace.h"
@@ -9,7 +10,8 @@
 
 class Emulator {
 public:
-    explicit Emulator(diagnostics::TraceSink* trace = nullptr, debugger::Debugger* debugger = nullptr);
+    explicit Emulator(diagnostics::TraceSink* trace = nullptr, debugger::Debugger* debugger = nullptr,
+                      const config::Settings& settings = {});
     ~Emulator();
 
     /* initliase the Emulator subsytems */

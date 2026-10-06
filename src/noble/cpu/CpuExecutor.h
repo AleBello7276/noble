@@ -1,5 +1,6 @@
 #pragma once
 #include "PpcContext.h"
+#include "config/Settings.h"
 #include <atomic>
 #include <cstdint>
 #include <map>
@@ -11,7 +12,9 @@
 #include "diagnostics/Trace.h"
 
 class Memory;
-namespace debugger { class Debugger; }
+namespace debugger {
+class Debugger;
+}
 
 using GuestAddress = uint32_t;
 
@@ -25,7 +28,7 @@ struct ExecutionResult {
 class CpuExecutor {
 public:
     explicit CpuExecutor(Memory& memory, diagnostics::TraceSink* trace = nullptr,
-                         debugger::Debugger* debugger = nullptr);
+                         debugger::Debugger* debugger = nullptr, const config::JITConfig& settings = {});
     ~CpuExecutor();
 
     // execute from cia and follow nia until termination, shutdown or a guest fault

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EmitterContext.h"
+#include "config/Settings.h"
 #include "cpu/JITBackend.h"
 #include "cranelift.h"
 #include "emulator/Memory.h"
@@ -29,7 +30,7 @@ struct JITFunction {
 
 class CraneliftJIT final : public JITBackend {
 public:
-    explicit CraneliftJIT(Memory& memory, bool debugging = false);
+    explicit CraneliftJIT(Memory& memory, bool debugging = false, const config::JITConfig& settings = {});
     // debug blocks contain a synchronous checkpoint before every guest instruction
     bool Debugging() const { return debugging_; }
     bool DispatchBlocks() const { return dispatchBlocks_; }
@@ -56,6 +57,7 @@ public:
 
 private:
     Memory& memory_;
+    const config::JITConfig config_;
     const bool debugging_;
     const bool dispatchBlocks_;
     cranelift::JITModule jit_module_;

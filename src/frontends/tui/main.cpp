@@ -1,7 +1,9 @@
+#include "DebuggerView.h"
 #include "Logger.h"
 #include "TraceView.h"
-#include "DebuggerView.h"
+#include "config/Config.h"
 #include "debugger/Debugger.h"
+#include "diagnostics/Performance.h"
 #include "emulator/Emulator.h"
 #include <atomic>
 #include <iostream>
@@ -24,27 +26,25 @@ public:
 
 }  // namespace
 
-int main(int argc, char* argv[]) {
-    bool debug = false;
-    bool trace = false;
-    bool valid = argc >= 2;
-    for (int i = 2; i < argc; ++i) {
-        if (std::string_view(argv[i]) == "--debug") debug = true;
-        else if (std::string_view(argv[i]) == "--trace-execution") trace = true;
-        else valid = false;
+int main(int argc, char* argv[]) try {
+    const auto launch = config::ParseLaunch(argc, argv, config::Frontend::TUI);
+    if (launch.help) {
+        std::cout << config::Help(argv[0]);
+        return 0;
     }
-    if (!valid) {
-        std::cerr << "usage: noble-tui <title.xex> [--debug] [--trace-execution]\n";
-        return 1;
+    if (launch.printConfig) {
+        std::cout << launch.config.Describe();
+        return 0;
     }
-
+    const auto& settings = launch.config.values;
+    const bool debug = settings.debugger.enabled;
     diagnostics::TraceStore store;
-    store.SetExecutionEnabled(trace);
+    store.SetExecutionEnabled(settings.diagnostics.executionTrace);
     TraceLogging logging(store);
-    debugger::Debugger debugger;
-    Emulator emulator(&store, debug ? &debugger : nullptr);
+    debugger::Debugger debugger(settings.debugger.breakOnEntry);
+    Emulator emulator(&store, debug ? &debugger : nullptr, settings);
 
-    if (!emulator.Initialise() || !emulator.LoadTitle(argv[1])) {
+    if (!emulator.Initialise() || !emulator.LoadTitle(launch.title)) {
         for (const auto& recorded : store.Read().events)
             if (recorded.event.kind == diagnostics::EventKind::Log)
                 std::cerr << recorded.event.message << '\n';
@@ -77,5 +77,10 @@ int main(int argc, char* argv[]) {
     execution.join();
     emulator.Shutdown();
 
+    if (settings.diagnostics.profiling)
+        std::cout << diagnostics::Performance::Read().Report();
     return frontendFailed ? 1 : result.load(std::memory_order_acquire);
+} catch (const std::exception& error) {
+    std::cerr << error.what() << '\n';
+    return 1;
 }

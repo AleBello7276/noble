@@ -1,0 +1,26 @@
+# settings are read once before guest workers start
+# explicit settings override preset defaults
+
+[jit]
+preset = "development"
+compilation = "blocks"
+branch_budget = 1024
+dump_ir = false
+
+[jit.cranelift]
+# uncomment to override the preset
+# opt_level = "speed"
+# enable_verifier = true
+
+[jit.cranelift.flags]
+# additional flags are passed directly to cranelift
+# enable_alias_analysis = true
+
+[diagnostics]
+profiling = false
+execution_trace = false
+
+[debugger]
+enabled = false
+# leave unspecified so noble-profile can continue immediately by default
+# break_on_entry = true

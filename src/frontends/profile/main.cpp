@@ -1,4 +1,5 @@
 #include "Logger.h"
+#include "config/Config.h"
 #include "debugger/Debugger.h"
 #include "diagnostics/Performance.h"
 #include "diagnostics/TraceStore.h"
@@ -9,34 +10,46 @@
 #include <iostream>
 #include <thread>
 
-int main(int argc, char* argv[]) {
-    if (argc < 2 || argc > 3 || (argc == 3 && std::string_view(argv[2]) != "--debug")) {
-        std::cerr << "usage: noble-profile <title.xex> [--debug]\n";
-        return 1;
+int main(int argc, char* argv[]) try {
+    const auto launch = config::ParseLaunch(argc, argv, config::Frontend::Profile);
+    if (launch.help) {
+        std::cout << config::Help(argv[0]);
+        return 0;
     }
-
-    const bool debug = argc == 3;
+    if (launch.printConfig) {
+        std::cout << launch.config.Describe();
+        return 0;
+    }
+    const auto& settings = launch.config.values;
+    const bool debug = settings.debugger.enabled;
     const auto origin = std::chrono::steady_clock::now();
     auto elapsed
         = [&] { return std::chrono::duration<double>(std::chrono::steady_clock::now() - origin).count(); };
     auto phase = [&](const char* name) { std::cerr << name << " at " << elapsed() << " s\n"; };
-    diagnostics::Performance::enabled.store(true);
     diagnostics::TraceStore trace;
+    trace.SetExecutionEnabled(settings.diagnostics.executionTrace);
 
-    Logger::SetSink([](LogLevel level, std::string_view message, void*) noexcept {
-        if (level >= LogLevel::Warn)
-            std::cerr << message << '\n';
-    });
+    bool dumpIR = settings.jit.dumpIR;
+    Logger::SetSink(
+        [](LogLevel level, std::string_view message, void* context) noexcept {
+            if (level >= LogLevel::Warn || *static_cast<const bool*>(context))
+                std::cerr << message << '\n';
+        },
+        &dumpIR);
+    // restore logging before the local sink context is destroyed on every exit path
+    struct LoggingGuard {
+        ~LoggingGuard() { Logger::SetSink(nullptr); }
+    } loggingGuard;
 
-    debugger::Debugger debugger(false);
-    Emulator emulator(&trace, debug ? &debugger : nullptr);
+    debugger::Debugger debugger(settings.debugger.breakOnEntry);
+    Emulator emulator(&trace, debug ? &debugger : nullptr, settings);
     phase("constructed");
 
     if (!emulator.Initialise())
         return 1;
 
     phase("initialized");
-    if (!emulator.LoadTitle(argv[1]))
+    if (!emulator.LoadTitle(launch.title))
         return 1;
 
     phase("loaded");
@@ -82,4 +95,8 @@ int main(int argc, char* argv[]) {
 
     Logger::SetSink(nullptr);
     return timeout ? 2 : fault || result.load() == 1 ? 1 : 0;
+} catch (const std::exception& error) {
+    Logger::SetSink(nullptr);
+    std::cerr << error.what() << '\n';
+    return 1;
 }

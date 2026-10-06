@@ -2,6 +2,14 @@ cmake_minimum_required(VERSION 3.30)
 
 project(noble)
 
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/third_party/tomlplusplus/CMakeLists.txt")
+    message(FATAL_ERROR "toml++ is missing, run git submodule update --init third_party/tomlplusplus")
+endif()
+add_subdirectory("${CMAKE_SOURCE_DIR}/third_party/tomlplusplus" "${CMAKE_CURRENT_BINARY_DIR}/tomlplusplus" EXCLUDE_FROM_ALL)
+add_library(noble_config STATIC noble/config/Config.cpp)
+target_include_directories(noble_config PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/noble)
+target_link_libraries(noble_config PRIVATE tomlplusplus::tomlplusplus)
+
 
 set(Core
     noble/core/HostClock.cpp
@@ -88,6 +96,7 @@ set(INCLUDE
 
 
 add_library(noble_runtime STATIC ${SRC})
+target_link_libraries(noble_runtime PUBLIC noble_config)
 target_include_directories(noble_runtime PUBLIC ${INCLUDE})
 add_executable(noble noble/noble.cpp)
 target_link_libraries(noble PRIVATE noble_runtime)
@@ -146,9 +155,10 @@ endif()
 
 add_library(noble_trace STATIC EXCLUDE_FROM_ALL noble/diagnostics/TraceStore.cpp)
 target_include_directories(noble_trace PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/noble)
+target_link_libraries(noble PRIVATE noble_trace)
 
 add_executable(noble-debug frontends/debugger/main.cpp)
-target_link_libraries(noble-debug PRIVATE noble_runtime)
+target_link_libraries(noble-debug PRIVATE noble_runtime noble_trace)
 add_executable(noble-profile frontends/profile/main.cpp)
 target_link_libraries(noble-profile PRIVATE noble_runtime noble_trace)
 

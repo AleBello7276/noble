@@ -1,17 +1,28 @@
+#include "config/Config.h"
 #include "debugger/Debugger.h"
+#include "diagnostics/Performance.h"
+#include "diagnostics/TraceStore.h"
 #include "emulator/Emulator.h"
 #include <atomic>
 #include <iostream>
 #include <thread>
 
-int main(int argc, char* argv[]) {
-    if (argc != 2) {
-        std::cerr << "usage: noble-debug <title.xex>\n";
-        return 1;
+int main(int argc, char* argv[]) try {
+    const auto launch = config::ParseLaunch(argc, argv, config::Frontend::Debugger);
+    if (launch.help) {
+        std::cout << config::Help(argv[0]);
+        return 0;
     }
-    debugger::Debugger debugger;
-    Emulator emulator(nullptr, &debugger);
-    if (!emulator.Initialise() || !emulator.LoadTitle(argv[1]))
+    if (launch.printConfig) {
+        std::cout << launch.config.Describe();
+        return 0;
+    }
+    const auto& settings = launch.config.values;
+    diagnostics::TraceStore trace;
+    trace.SetExecutionEnabled(settings.diagnostics.executionTrace);
+    debugger::Debugger debugger(settings.debugger.breakOnEntry);
+    Emulator emulator(settings.diagnostics.executionTrace ? &trace : nullptr, &debugger, settings);
+    if (!emulator.Initialise() || !emulator.LoadTitle(launch.title))
         return 1;
     std::atomic_int result{-1};
     std::jthread execution([&] {
@@ -22,7 +33,7 @@ int main(int argc, char* argv[]) {
             result.store(1);
         }
     });
-    std::cout << "guest debugger, entry starts paused; enter help for commands\n";
+    std::cout << "guest debugger; enter help for commands\n";
     for (std::string command; std::getline(std::cin, command);) {
         if (command == "quit")
             break;
@@ -31,5 +42,10 @@ int main(int argc, char* argv[]) {
     emulator.RequestStop();
     execution.join();
     emulator.Shutdown();
+    if (settings.diagnostics.profiling)
+        std::cout << diagnostics::Performance::Read().Report();
     return result.load();
+} catch (const std::exception& error) {
+    std::cerr << error.what() << '\n';
+    return 1;
 }

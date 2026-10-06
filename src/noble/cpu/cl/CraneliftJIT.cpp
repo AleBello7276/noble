@@ -6,36 +6,12 @@
 #include "powerpc-rs.h"
 #include <algorithm>
 #include <assert.h>
-#include <cstdlib>
 #include <cstring>
 #include <format>
 #include <string>
 
 #include "clDispatchTable.h"
 #include "kernel/hle/Shims.h"
-
-// copy startup configuration before guest workers can access the environment
-std::string EnvironmentSetting(const char* name, const char* fallback) {
-#ifdef _WIN32
-    char* value = nullptr;
-    size_t size = 0;
-    if (_dupenv_s(&value, &size, name) != 0)
-        throw std::runtime_error("unable to read jit configuration");
-    const std::string result = value && *value ? value : fallback;
-    std::free(value);
-    return result;
-#else
-    const char* value = std::getenv(name);
-    return value && *value ? value : fallback;
-#endif
-}
-
-bool CompileBlocks() {
-    const auto mode = EnvironmentSetting("NOBLE_JIT_COMPILATION", "blocks");
-    if (mode != "blocks" && mode != "functions")
-        throw std::invalid_argument("NOBLE_JIT_COMPILATION must be blocks or functions");
-    return mode == "blocks";
-}
 
 // TODO: move this
 static void host_yield() {
@@ -48,12 +24,24 @@ static uint64_t host_load_clock() {
     return HostClock::GetInstance().GetGuestTickCount();
 }
 
-CraneliftJIT::CraneliftJIT(Memory& memory, bool debugging)
-    : memory_(memory), debugging_(debugging), dispatchBlocks_(CompileBlocks()), jit_module_(nullptr) {
-    const std::string optimization = EnvironmentSetting("NOBLE_JIT_OPT_LEVEL", "none");
-    const std::string verifier = EnvironmentSetting("NOBLE_JIT_VERIFY_PASSES", "false");
-    jit_builder_ = cranelift::JITBuilder::with_flags(
-        {{"opt_level", optimization.c_str()}, {"enable_verifier", verifier.c_str()}});
+CraneliftJIT::CraneliftJIT(Memory& memory, bool debugging, const config::JITConfig& settings)
+    : memory_(memory), config_(settings), debugging_(debugging),
+      dispatchBlocks_(settings.compilation == config::Compilation::Blocks), jit_module_(nullptr) {
+    if (!config_.branchBudget || config_.branchBudget > INT32_MAX)
+        throw std::invalid_argument("jit branch budget must be between 1 and 2147483647");
+
+    const std::string optimization = config::Name(config_.optimization);
+    std::vector<const char*> names{"opt_level", "enable_verifier"};
+    std::vector<const char*> values{optimization.c_str(), config_.verifyPasses ? "true" : "false"};
+
+    for (const auto& [name, value] : config_.flags) {
+        if (name == "opt_level" || name == "enable_verifier")
+            throw std::invalid_argument("use the typed jit setting for " + name);
+        names.push_back(name.c_str());
+        values.push_back(value.c_str());
+    }
+
+    jit_builder_ = cranelift::JITBuilder::with_flags(names.data(), values.data(), names.size());
     if (!jit_builder_)
         throw std::runtime_error(cranelift::last_error());
 
@@ -203,7 +191,7 @@ bool CraneliftJIT::CompileFunction(const PPCFuncMap& bounds) {
     EmitterContext emitter(analyzed, state, base, jit_module_, _builder, &memory_, this);
     if (!debugging_) {
         emitter.branchBudget = _builder.declare_var(types::I32());
-        _builder.def_var(emitter.branchBudget, emitter.i32(1024));
+        _builder.def_var(emitter.branchBudget, emitter.i32(config_.branchBudget));
     }
 
     // keep guest branches out of the native entry block containing abi parameters
@@ -287,9 +275,8 @@ bool CraneliftJIT::CompileFunction(const PPCFuncMap& bounds) {
     _builder.seal_all_blocks();
     _builder.finish(jit_module_);
 
-#if NOBLE_CRANELIFT_DEBUG
-    LOG_INFO("{}", funcContext.ir());
-#endif
+    if (config_.dumpIR || NOBLE_CRANELIFT_DEBUG)
+        LOG_INFO("{}", funcContext.ir());
 
     emissionProfile.Stop();
     PublishFunction(funcID, funcContext, funcStart, funcEnd);
@@ -396,8 +383,7 @@ void CraneliftJIT::CompileJITBlock(GuestAddress address) {
                 const codec::Ins inst(byte_swap(word));
                 const size_t opcode = size_t(inst.op);
                 if (pc > address
-                    && (opcode >= emitter_dispatch_table.size()
-                        || !emitter_dispatch_table[opcode])) {
+                    && (opcode >= emitter_dispatch_table.size() || !emitter_dispatch_table[opcode])) {
                     bounds.mEnd = pc;
                     break;
                 }

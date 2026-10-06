@@ -1,10 +1,13 @@
 #include "Emulator.h"
 #include "Logger.h"
+#include "diagnostics/Performance.h"
 #include <cstring>
 
-Emulator::Emulator(diagnostics::TraceSink* trace, debugger::Debugger* debugger)
-    : mMemory_(), cpu_(mMemory_, trace, debugger), mScheduler_(cpu_, trace),
+Emulator::Emulator(diagnostics::TraceSink* trace, debugger::Debugger* debugger,
+                   const config::Settings& settings)
+    : mMemory_(), cpu_(mMemory_, trace, debugger, settings.jit), mScheduler_(cpu_, trace),
       mKernel_(mMemory_, mScheduler_, {}, trace) {
+    diagnostics::Performance::enabled.store(settings.diagnostics.profiling, std::memory_order_relaxed);
     cpu_.jit()->SetHLERegistry(&mKernel_.Imports());
 }
 

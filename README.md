@@ -24,6 +24,10 @@ Great question.. well those crates are Great so i don't have to reinvent the whe
 
 An instruction stepper is available through `noble-debug` or the optional FTXUI frontend with `--debug`
 
+## Configuration
+
+Settings are loaded from `noble.toml` in the working directory, with optional title settings and command-line overrides
+
 ## Contributing
 if want to contribute, make a fork and a PR, also join the discord server! 
 

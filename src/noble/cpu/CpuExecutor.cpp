@@ -10,9 +10,10 @@
 
 #include "cl/CraneliftJIT.h"
 
-CpuExecutor::CpuExecutor(Memory& memory, diagnostics::TraceSink* trace, debugger::Debugger* debugger)
+CpuExecutor::CpuExecutor(Memory& memory, diagnostics::TraceSink* trace, debugger::Debugger* debugger,
+                         const config::JITConfig& settings)
     : memory_(memory), trace_(trace), debugger_(debugger),
-      jit_(std::make_unique<CraneliftJIT>(memory, debugger != nullptr)) {
+      jit_(std::make_unique<CraneliftJIT>(memory, debugger != nullptr, settings)) {
     if (debugger_)
         debugger_->BindMemory(&memory_);
 }
