@@ -242,10 +242,10 @@ CLHandler(andc) {
 
 CLHandler(andi) {
     const auto ra = info_.mInst.field_ra();
-    const auto rb = info_.mInst.field_rb();
+    const auto rs = info_.mInst.field_rs();
     const auto uimm = info_.mInst.field_uimm();
 
-    const Value res = e_.ins().band_imm_u(e_.load_gpr(rb), zero_extend<16>(uimm));
+    const Value res = e_.ins().band_imm_u(e_.load_gpr(rs), zero_extend<16>(uimm));
     e_.store_gpr(ra, res);
     e_.record_cr(0, res);
 }
