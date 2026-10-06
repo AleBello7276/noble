@@ -9,7 +9,7 @@ namespace cranelift {
 extern "C" {
 #endif
 
-// Pinned to the Cranelift 0.135.2 entity and Type representations.
+// pinned to the cranelift 0.136.2 entity and type representations
 // Rust-owned values are opaque. Entity IDs belong to the function/module that created them.
 typedef struct ClSettingsBuilder ClSettingsBuilder;
 typedef struct ClNativeBuilder ClNativeBuilder;

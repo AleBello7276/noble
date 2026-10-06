@@ -8,8 +8,8 @@ crate-type = ["staticlib"]
 
 [dependencies]
 powerpc = "0.4" # disassembler
-cranelift-codegen = "=0.135.2"
-cranelift-frontend = "=0.135.2"
-cranelift-jit = "=0.135.2"
-cranelift-module = "=0.135.2"
-cranelift-native = "=0.135.2"
+cranelift-codegen = "=0.136.2"
+cranelift-frontend = "=0.136.2"
+cranelift-jit = "=0.136.2"
+cranelift-module = "=0.136.2"
+cranelift-native = "=0.136.2"

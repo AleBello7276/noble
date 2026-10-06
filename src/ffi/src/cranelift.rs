@@ -1,4 +1,4 @@
-//! Direct C entry points for the Cranelift 0.135.2 APIs used by the C++ frontend.
+//! direct c entry points for the cranelift 0.136.2 apis used by the c++ frontend
 //! Rust-owned objects stay opaque; Cranelift entity IDs cross as their u32 indexes.
 
 use std::cell::RefCell;
