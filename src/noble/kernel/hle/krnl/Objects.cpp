@@ -43,7 +43,7 @@ uint32_t ObReferenceObjectByHandle(Kernel& kernel, KThread& caller, uint32_t han
     }
 
     if (!object->RetainGuestReference()) {
-        return STATUS_INSUFFICIENT_RESOURCES;
+        return X_STATUS_INSUFFICIENT_RESOURCES;
     }
 
     *out_object = address;

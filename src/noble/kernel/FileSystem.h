@@ -1,5 +1,6 @@
 #pragma once
 
+#include "KernelTypes.h"
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -13,28 +14,6 @@
 
 namespace vfs {
 
-enum class Status : uint32_t {
-    Success = 0,
-    AccessViolation = 0xC0000005,
-    InvalidHandle = 0xC0000008,
-    InvalidDeviceRequest = 0xC0000010,
-    EndOfFile = 0xC0000011,
-    InvalidParameter = 0xC000000D,
-    AccessDenied = 0xC0000022,
-    ObjectTypeMismatch = 0xC0000024,
-    ObjectNameInvalid = 0xC0000033,
-    ObjectNameNotFound = 0xC0000034,
-    ObjectNameCollision = 0xC0000035,
-    ObjectPathNotFound = 0xC000003A,
-    SharingViolation = 0xC0000043,
-    InsufficientResources = 0xC000009A,
-    MediaWriteProtected = 0xC00000A2,
-    FileIsADirectory = 0xC00000BA,
-    NotSupported = 0xC00000BB,
-    NotADirectory = 0xC0000103,
-    IOError = 0xC0000185,
-};
-
 enum class Disposition : uint32_t { Supersede, Open, Create, OpenIf, Overwrite, OverwriteIf };
 enum class Action : uint32_t { Superseded, Opened, Created, Overwritten, Exists, DoesNotExist };
 
@@ -44,8 +23,9 @@ class File {
 public:
     bool IsDirectory() const noexcept { return directory_; }
     bool IsSynchronous() const noexcept { return synchronous_; }
+
     struct ReadResult {
-        Status status;
+        XNTSTATUS status;
         uint32_t bytes;
     };
     // read into host memory using an explicit byte offset or the shared file position
@@ -79,9 +59,26 @@ struct OpenRequest {
 };
 
 struct OpenResult {
-    Status status = Status::Success;
+    XNTSTATUS status = STATUS_SUCCESS;
     Action action = Action::DoesNotExist;
     std::shared_ptr<File> file;
+};
+
+// portable metadata with nt timestamps measured in 100 ns units since 1601
+// creation and access times are unavailable and allocation size falls back to logical size
+struct FileInformation {
+    uint64_t creationTime = 0;
+    uint64_t lastAccessTime = 0;
+    uint64_t lastWriteTime = 0;
+    uint64_t changeTime = 0;
+    uint64_t allocationSize = 0;
+    uint64_t endOfFile = 0;
+    uint32_t attributes = 0;
+};
+
+struct QueryResult {
+    XNTSTATUS status = STATUS_SUCCESS;
+    FileInformation information;
 };
 
 // translate mounted xbox paths and enforce guest sharing without exposing host paths to hle code
@@ -100,12 +97,23 @@ public:
     // symlink traversal and superseding a file with live handles are unsupported by this backend
     OpenResult Open(const OpenRequest& request);
 
+    // query existing file or directory metadata without opening a stream or reserving guest sharing
+    QueryResult Query(std::string_view path, const std::shared_ptr<File>& root = {});
+
 private:
+    struct ResolvedPath {
+        std::filesystem::path root, path;
+        bool readOnly = true;
+    };
+    // caller holds the filesystem mutex while resolving mount mappings
+    XNTSTATUS Resolve(std::string_view name, const std::shared_ptr<File>& root, ResolvedPath& resolved);
+
     struct MountPoint {
         std::string prefix;
         std::filesystem::path root;
         bool readOnly;
     };
+
     std::mutex mutex_;
     std::vector<MountPoint> mounts_;
     std::vector<std::weak_ptr<File>> opened_;
