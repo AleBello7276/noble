@@ -331,3 +331,21 @@ CLHandler(sync) {
 CLHandler(isync) {
     e_.ins().nop();
 }
+
+inline void emit_dcbz(EmitterContext& e_, uint32_t ra, uint32_t rb) {
+    const Value base = ra ? e_.load_gpr(ra) : e_.i64(0);
+    const Value ea = e_.ins().band_imm_u(e_.ins().iadd(base, e_.load_gpr(rb)), ~0x7FULL);
+
+    const Value zero = e_.ins().splat(types::I8X16(), e_.i8(0));
+
+    for (uint32_t offset = 0; offset < 128; offset += 16)
+        e_.store_memory(e_.ins().iadd_imm_u(ea, offset), zero);
+}
+
+CLHandler(dcbz) {
+    emit_dcbz(e_, info_.mInst.field_ra(), info_.mInst.field_rb());
+}
+
+CLHandler(dcbzl) {
+    emit_dcbz(e_, info_.mInst.field_ra(), info_.mInst.field_rb());
+}

@@ -682,6 +682,42 @@ CLHandler(rldicr) {
         e_.record_cr(0, result);
 }
 
+CLHandler(divw) {
+    const auto oe = info_.mInst.field_oe();
+    const auto rc = info_.mInst.field_rc();
+    const auto rd = info_.mInst.field_rd();
+    const auto ra = info_.mInst.field_ra();
+    const auto rb = info_.mInst.field_rb();
+
+    if (oe) {
+        LOG_FATAL("divw instruction OE bit not implemented.");
+        assert(false);
+    }
+
+    const Value dividend = e_.reduce32(e_.load_gpr(ra));
+    const Value divisor = e_.reduce32(e_.load_gpr(rb));
+
+    // this is ugly, need to find a better way to have more control on
+    // how cranelift trapts invalid divisions to avoit this extra "safety" IR
+    const Value is_zero = e_.ins().icmp_imm_u(IntCC::CL_INTCC_EQUAL, divisor, 0);
+    const Value is_min = e_.ins().icmp_imm_u(IntCC::CL_INTCC_EQUAL, dividend, 0x80000000u);
+    const Value is_neg_one = e_.ins().icmp_imm_u(IntCC::CL_INTCC_EQUAL, divisor, 0xFFFFFFFFu);
+
+    const Value overflow = e_.ins().band(is_min, is_neg_one);
+    const Value invalid = e_.ins().bor(is_zero, overflow);
+
+    const Value safe_dividend = e_.ins().select(invalid, e_.i32(0), dividend);
+    const Value safe_divisor = e_.ins().select(invalid, e_.i32(1), divisor);
+
+    const Value quotient = e_.ins().sdiv(safe_dividend, safe_divisor);
+    const Value result = e_.sext64(quotient);  // sign extend !!
+
+    e_.store_gpr(rd, result);
+
+    if (rc)
+        e_.record_cr(0, result);
+}
+
 CLHandler(divwu) {
     const auto oe = info_.mInst.field_oe();
     const auto rc = info_.mInst.field_rc();

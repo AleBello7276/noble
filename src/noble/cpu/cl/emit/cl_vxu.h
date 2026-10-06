@@ -90,8 +90,8 @@ inline Value half_to_f32(EmitterContext& e_, Value half) {
 inline Value emit_vupkd3d(EmitterContext& e_, Value source, uint32_t type) {
     const Value zero = e_.ins().splat(types::I8X16(), e_.i8(0));
     // interpret shuffled bytes as host vector lanes with the least significant byte first
-    const MemFlags lane_flags = e_.builder.memflags_with_endianness(
-        e_.builder.memflags_new(), Endianness::CL_ENDIANNESS_LITTLE);
+    const MemFlags lane_flags
+        = e_.builder.memflags_with_endianness(e_.builder.memflags_new(), Endianness::CL_ENDIANNESS_LITTLE);
 
     switch (type) {
     case 0: {
@@ -328,4 +328,140 @@ CLHandler(vrlimi128) {
     const Value result = e_.ins().shuffle(source, dest, mask);
 
     e_.store_vr(vd, result);
+}
+
+inline void emit_lvsl(EmitterContext& e_, uint32_t vd, uint32_t ra, uint32_t rb) {
+    const Value base = ra ? e_.load_gpr(ra) : e_.i64(0);
+    const Value ea = e_.ins().iadd(base, e_.load_gpr(rb));
+
+    const Value sh = e_.ins().ireduce(types::I8(), e_.ins().band_imm_u(ea, 0xF));
+
+    static constexpr std::array<uint8_t, 16> bytes = {15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0};
+
+    const Value indices = e_.ins().vconst(types::I8X16(), bytes);
+    const Value result = e_.ins().iadd(indices, e_.ins().splat(types::I8X16(), sh));
+
+    e_.store_vr(vd, result);
+}
+
+CLHandler(lvsl) {
+    emit_lvsl(e_, info_.mInst.field_vd(), info_.mInst.field_ra(), info_.mInst.field_rb());
+}
+
+CLHandler(lvsl128) {
+    emit_lvsl(e_, info_.mInst.field_vds128(), info_.mInst.field_ra(), info_.mInst.field_rb());
+}
+
+inline void emit_vperm(EmitterContext& e_, uint32_t vd, uint32_t va, uint32_t vb, uint32_t vc) {
+    const Value swap = e_.ins().splat(types::I8X16(), e_.i8(0x03));
+    const Value mask = e_.ins().splat(types::I8X16(), e_.i8(0x1F));
+    const Value source_bit = e_.ins().splat(types::I8X16(), e_.i8(0x10));
+
+    Value control = e_.ins().bxor(e_.load_vr(vc, types::I8X16()), swap);
+    control = e_.ins().band(control, mask);
+
+    const Value a = e_.ins().swizzle(e_.load_vr(va, types::I8X16()), control);
+    const Value b = e_.ins().swizzle(e_.load_vr(vb, types::I8X16()), e_.ins().bxor(control, source_bit));
+
+    e_.store_vr(vd, e_.ins().bor(a, b));
+}
+
+CLHandler(vperm) {
+    emit_vperm(e_, info_.mInst.field_vd(), info_.mInst.field_va(), info_.mInst.field_vb(),
+               info_.mInst.field_vc());
+}
+
+CLHandler(vperm128) {
+    emit_vperm(e_, info_.mInst.field_vds128(), info_.mInst.field_va128(), info_.mInst.field_vb128(),
+               info_.mInst.field_vc());
+}
+
+inline void emit_stvlx(EmitterContext& e_, uint32_t vs, uint32_t ra, uint32_t rb) {
+    const Value base = ra ? e_.load_gpr(ra) : e_.i64(0);
+    const Value ea = e_.ins().iadd(base, e_.load_gpr(rb));
+
+    const Value aligned = e_.ins().band_imm_u(ea, ~0xFULL);
+    const Value eb = e_.ins().ireduce(types::I8(), e_.ins().band_imm_u(ea, 0xF));
+
+    const Value old = e_.load_memory(aligned, types::I8X16());
+    const Value source = e_.byteswap_v128(e_.load_vr(vs, types::I8X16()));
+
+    static constexpr std::array<uint8_t, 16> indices_bytes
+        = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+
+    const Value indices = e_.ins().vconst(types::I8X16(), indices_bytes);
+    const Value offset = e_.ins().splat(types::I8X16(), eb);
+
+    const Value source_indices = e_.ins().isub(indices, offset);
+    const Value shifted = e_.ins().swizzle(source, source_indices);
+
+    const Value replace = e_.ins().icmp(IntCC::CL_INTCC_UNSIGNED_GREATER_THAN_OR_EQUAL, indices, offset);
+
+    const Value result = e_.ins().bitselect(replace, shifted, old);
+
+    e_.store_memory(aligned, result);
+}
+
+CLHandler(stvlx) {
+    emit_stvlx(e_, info_.mInst.field_vs(), info_.mInst.field_ra(), info_.mInst.field_rb());
+}
+
+CLHandler(stvlxl) {
+    emit_stvlx(e_, info_.mInst.field_vs(), info_.mInst.field_ra(), info_.mInst.field_rb());
+}
+
+CLHandler(stvlx128) {
+    emit_stvlx(e_, info_.mInst.field_vds128(), info_.mInst.field_ra(), info_.mInst.field_rb());
+}
+
+CLHandler(stvlxl128) {
+    emit_stvlx(e_, info_.mInst.field_vds128(), info_.mInst.field_ra(), info_.mInst.field_rb());
+}
+
+inline void emit_stvrx(EmitterContext& e_, uint32_t vs, uint32_t ra, uint32_t rb) {
+    const Value base = ra ? e_.load_gpr(ra) : e_.i64(0);
+    const Value ea = e_.ins().iadd(base, e_.load_gpr(rb));
+    const Value eb = e_.ins().ireduce(types::I8(), e_.ins().band_imm_u(ea, 0xF));
+
+    const Block store = e_.builder.create_block();
+    const Block done = e_.builder.create_block();
+
+    const Value has_data = e_.ins().icmp_imm_u(IntCC::CL_INTCC_NOT_EQUAL, eb, 0);
+    e_.Branch(has_data, store, {}, done, {});
+
+    e_.SwitchToBlock(store);
+
+    const Value aligned = e_.ins().band_imm_u(ea, ~0xFULL);
+    const Value old = e_.load_memory(aligned, types::I8X16());
+    const Value source = e_.byteswap_v128(e_.load_vr(vs, types::I8X16()));
+
+    static constexpr std::array<uint8_t, 16> bytes = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+
+    const Value indices = e_.ins().vconst(types::I8X16(), bytes);
+    const Value offset = e_.ins().splat(types::I8X16(), e_.ins().isub(e_.i8(16), eb));
+
+    const Value shifted = e_.ins().swizzle(source, e_.ins().iadd(indices, offset));
+    const Value replace
+        = e_.ins().icmp(IntCC::CL_INTCC_UNSIGNED_LESS_THAN, indices, e_.ins().splat(types::I8X16(), eb));
+
+    e_.store_memory(aligned, e_.ins().bitselect(replace, shifted, old));
+
+    e_.Jump(done);
+    e_.SwitchToBlock(done);
+}
+
+CLHandler(stvrx) {
+    emit_stvrx(e_, info_.mInst.field_vs(), info_.mInst.field_ra(), info_.mInst.field_rb());
+}
+
+CLHandler(stvrxl) {
+    emit_stvrx(e_, info_.mInst.field_vs(), info_.mInst.field_ra(), info_.mInst.field_rb());
+}
+
+CLHandler(stvrx128) {
+    emit_stvrx(e_, info_.mInst.field_vds128(), info_.mInst.field_ra(), info_.mInst.field_rb());
+}
+
+CLHandler(stvrxl128) {
+    emit_stvrx(e_, info_.mInst.field_vds128(), info_.mInst.field_ra(), info_.mInst.field_rb());
 }
