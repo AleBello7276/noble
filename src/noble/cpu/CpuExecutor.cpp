@@ -3,6 +3,7 @@
 #include "Logger.h"
 #include "debugger/Debugger.h"
 #include "diagnostics/TraceEvents.h"
+#include "diagnostics/Performance.h"
 #include "emulator/Memory.h"
 #include "kernel/KThread.h"
 #include <exception>
@@ -23,6 +24,7 @@ CpuExecutor::~CpuExecutor() {
 
 ExecutionResult CpuExecutor::Execute(PPCContext& context, const std::atomic_bool& terminate,
                                      std::stop_token stop) {
+    debugger::ExecutionSession debugSession(debugger_, context, terminate, stop);
     const auto finish = [&](ExecutionReason reason, GuestAddress fault = 0) -> ExecutionResult {
         if (debugger_) {
             if (reason == ExecutionReason::Fault)
@@ -66,7 +68,9 @@ ExecutionResult CpuExecutor::Execute(PPCContext& context, const std::atomic_bool
                                       static_cast<CraneliftJIT*>(jit_.get())->IsImport(address)))
             return finish(ExecutionReason::Exited);
 
+        diagnostics::PhaseTimer lookupProfile(diagnostics::Phase::DispatchLookup);
         JITBlock block = jit_->FindBlock(address);
+        lookupProfile.Stop();
         if (!block) {
             diagnostics::EmitExecution(trace_, diagnostics::EventKind::CompileStarted, context, address);
 
@@ -94,9 +98,13 @@ ExecutionResult CpuExecutor::Execute(PPCContext& context, const std::atomic_bool
         if (trace_ && trace_->ExecutionEnabled())
             diagnostics::EmitExecution(trace_, diagnostics::EventKind::BlockEntered, context, address);
 
-        block(&context, memory_.GetMemoryBase());
+        {
+            diagnostics::PhaseTimer profile(diagnostics::Phase::Execute);
+            if (debugger_) debugSession.BeginBlock(address);
+            block(&context, memory_.GetMemoryBase());
+        }
         if (debugger_)
-            debugger_->Executed(context, address);
+            debugSession.EndBlock();
 
         // retain the executing entry when a jit block or hle shim reports a fault
         if (context.Fault != PPCFault::None)

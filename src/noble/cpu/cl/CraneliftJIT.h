@@ -29,9 +29,10 @@ struct JITFunction {
 
 class CraneliftJIT final : public JITBackend {
 public:
-    explicit CraneliftJIT(Memory& memory, bool singleInstruction = false);
-    // debugger blocks execute one guest instruction and never call another guest block directly
-    bool SingleInstruction() const { return singleInstruction_; }
+    explicit CraneliftJIT(Memory& memory, bool debugging = false);
+    // debug blocks contain a synchronous checkpoint before every guest instruction
+    bool Debugging() const { return debugging_; }
+    bool DispatchBlocks() const { return dispatchBlocks_; }
     bool IsImport(GuestAddress address) const;
 
     // copy analysis metadata and import bindings for later compilation
@@ -55,7 +56,8 @@ public:
 
 private:
     Memory& memory_;
-    const bool singleInstruction_;
+    const bool debugging_;
+    const bool dispatchBlocks_;
     cranelift::JITModule jit_module_;
     cranelift::JITBuilder jit_builder_;
     hle::Registry* imports_ = nullptr;
@@ -77,6 +79,7 @@ private:
     std::map<GuestAddress, PPCFuncMap> functionBounds_;
 
     mutable std::mutex mutex_;
+    mutable std::mutex compiledMutex_;
     mutable std::mutex funcMutex_;
 
     std::unordered_map<GuestAddress, JITFunction> functions_;
@@ -85,4 +88,5 @@ private:
 public:
     cranelift::FuncId host_yield_id;
     cranelift::FuncId host_load_clock_id;
+    cranelift::FuncId host_debug_instruction_id;
 };

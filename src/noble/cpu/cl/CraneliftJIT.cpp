@@ -1,15 +1,41 @@
 #include "CraneliftJIT.h"
 
 #include "core/HostClock.h"
+#include "debugger/Debugger.h"
+#include "diagnostics/Performance.h"
 #include "powerpc-rs.h"
 #include <algorithm>
 #include <assert.h>
+#include <cstdlib>
 #include <cstring>
 #include <format>
 #include <string>
 
 #include "clDispatchTable.h"
 #include "kernel/hle/Shims.h"
+
+// copy startup configuration before guest workers can access the environment
+std::string EnvironmentSetting(const char* name, const char* fallback) {
+#ifdef _WIN32
+    char* value = nullptr;
+    size_t size = 0;
+    if (_dupenv_s(&value, &size, name) != 0)
+        throw std::runtime_error("unable to read jit configuration");
+    const std::string result = value && *value ? value : fallback;
+    std::free(value);
+    return result;
+#else
+    const char* value = std::getenv(name);
+    return value && *value ? value : fallback;
+#endif
+}
+
+bool CompileBlocks() {
+    const auto mode = EnvironmentSetting("NOBLE_JIT_COMPILATION", "blocks");
+    if (mode != "blocks" && mode != "functions")
+        throw std::invalid_argument("NOBLE_JIT_COMPILATION must be blocks or functions");
+    return mode == "blocks";
+}
 
 // TODO: move this
 static void host_yield() {
@@ -22,13 +48,19 @@ static uint64_t host_load_clock() {
     return HostClock::GetInstance().GetGuestTickCount();
 }
 
-CraneliftJIT::CraneliftJIT(Memory& memory, bool singleInstruction)
-    : memory_(memory), singleInstruction_(singleInstruction), jit_module_(nullptr) {
-    jit_builder_ = cranelift::JITBuilder();
+CraneliftJIT::CraneliftJIT(Memory& memory, bool debugging)
+    : memory_(memory), debugging_(debugging), dispatchBlocks_(CompileBlocks()), jit_module_(nullptr) {
+    const std::string optimization = EnvironmentSetting("NOBLE_JIT_OPT_LEVEL", "none");
+    const std::string verifier = EnvironmentSetting("NOBLE_JIT_VERIFY_PASSES", "false");
+    jit_builder_ = cranelift::JITBuilder::with_flags(
+        {{"opt_level", optimization.c_str()}, {"enable_verifier", verifier.c_str()}});
+    if (!jit_builder_)
+        throw std::runtime_error(cranelift::last_error());
 
-    assert(jit_builder_);
     jit_builder_.symbol("host_yield", host_yield);
     jit_builder_.symbol("host_load_clock", host_load_clock);
+    if (debugging_)
+        jit_builder_.symbol("host_debug_instruction", &debugger::ExecutionSession::Instruction);
 
     jit_module_ = cranelift::JITModule(std::move(jit_builder_));
 
@@ -40,6 +72,14 @@ CraneliftJIT::CraneliftJIT(Memory& memory, bool singleInstruction)
     clock_sig.push_return(cranelift::types::I64());
     host_load_clock_id
         = jit_module_.declare_function("host_load_clock", cranelift::Linkage::CL_LINKAGE_IMPORT, clock_sig);
+    if (debugging_) {
+        auto signature = jit_module_.make_signature();
+        signature.push_param(cranelift::types::Pointer(jit_module_));
+        signature.push_param(cranelift::types::I32());
+        signature.push_return(cranelift::types::I32());
+        host_debug_instruction_id
+            = jit_module_.declare_function("host_debug_instruction", cranelift::CL_LINKAGE_IMPORT, signature);
+    }
 }
 
 void CraneliftJIT::RegisterPPCModule(const PPCModule& module) {
@@ -123,6 +163,7 @@ bool CraneliftJIT::CompileFunction(const PPCFuncMap& bounds) {
 
     if (compiledBlocks_.contains(funcStart))
         return true;
+    diagnostics::CompileTimer compileProfile(funcStart, funcEnd - funcStart);
 
     if (funcStart >= funcEnd || ((funcStart | funcEnd) & 3))
         throw std::invalid_argument("invalid jit function bounds");
@@ -135,7 +176,11 @@ bool CraneliftJIT::CompileFunction(const PPCFuncMap& bounds) {
 
     const std::span<const uint8_t> bytes(pointer, size);
     PPCFuncMap analyzed = bounds;
-    PPCModule::BuildFunctionCFG(analyzed, bytes);
+    {
+        diagnostics::PhaseTimer profile(diagnostics::Phase::FunctionCFG);
+        PPCModule::BuildFunctionCFG(analyzed, bytes);
+    }
+    diagnostics::PhaseTimer emissionProfile(diagnostics::Phase::EmitIR);
 
     cranelift::Context funcContext = jit_module_.make_context();
 
@@ -156,6 +201,10 @@ bool CraneliftJIT::CompileFunction(const PPCFuncMap& bounds) {
 
     // per function / compilation jit block context
     EmitterContext emitter(analyzed, state, base, jit_module_, _builder, &memory_, this);
+    if (!debugging_) {
+        emitter.branchBudget = _builder.declare_var(types::I32());
+        _builder.def_var(emitter.branchBudget, emitter.i32(1024));
+    }
 
     // keep guest branches out of the native entry block containing abi parameters
     const Block guestEntry = _builder.create_block();
@@ -209,6 +258,18 @@ bool CraneliftJIT::CompileFunction(const PPCFuncMap& bounds) {
             return false;
         }
 
+        if (debugging_) {
+            const auto hook = _builder.declare_func_in_func(jit_module_, host_debug_instruction_id);
+            const auto call = emitter.Call(hook, std::array{state, emitter.i32(address)});
+            const auto proceed = _builder.inst_result(call, 0);
+            const auto execute = _builder.create_block();
+            const auto stopped = _builder.create_block();
+            emitter.Branch(proceed, execute, {}, stopped, {});
+            emitter.SwitchToBlock(stopped);
+            emitter.Return();
+            emitter.SwitchToBlock(execute);
+        }
+
         emitter_dispatch_table[i](emitter, info);  // dispatch
 
         // if next address a start of a new block, add a fall through jump to it
@@ -230,6 +291,7 @@ bool CraneliftJIT::CompileFunction(const PPCFuncMap& bounds) {
     LOG_INFO("{}", funcContext.ir());
 #endif
 
+    emissionProfile.Stop();
     PublishFunction(funcID, funcContext, funcStart, funcEnd);
     return true;
 }
@@ -306,7 +368,9 @@ void CraneliftJIT::CompileImport(const XLoader::Import& import) {
 }
 
 void CraneliftJIT::CompileJITBlock(GuestAddress address) {
+    diagnostics::PhaseTimer waitProfile(diagnostics::Phase::CompileWait);
     std::lock_guard lock(mutex_);
+    waitProfile.Stop();
     if (address & 3)
         throw std::invalid_argument("unaligned entry address");
 
@@ -318,10 +382,28 @@ void CraneliftJIT::CompileJITBlock(GuestAddress address) {
         return;
     }
 
-    if (singleInstruction_) {
-        if (address > UINT32_MAX - 4)
-            throw std::invalid_argument("debug instruction exceeds guest address space");
-        CompileFunction(PPCFuncMap{.mStart = address, .mEnd = address + 4});
+    if (debugging_ || dispatchBlocks_) {
+        uint64_t limit = uint64_t(UINT32_MAX & ~3u);
+        for (const auto& region : codeRegions_)
+            if (address >= region.start && address < region.end)
+                limit = (std::min)(limit, region.end);
+        auto bounds = PPCModule::AnalyseJITBlock(memory_, address, limit);
+        // execute the supported prefix before reporting an unsupported instruction
+        {
+            for (GuestAddress pc = address; pc < bounds.mEnd; pc += 4) {
+                uint32_t word;
+                std::memcpy(&word, memory_.Translate(pc, 4), 4);
+                const codec::Ins inst(byte_swap(word));
+                const size_t opcode = size_t(inst.op);
+                if (pc > address
+                    && (opcode >= emitter_dispatch_table.size()
+                        || emitter_dispatch_table[opcode] == &cl_illegal_handler)) {
+                    bounds.mEnd = pc;
+                    break;
+                }
+            }
+        }
+        CompileFunction(bounds);
         return;
     }
 
@@ -358,7 +440,7 @@ bool CraneliftJIT::IsImport(GuestAddress address) const {
 void CraneliftJIT::InvalidateRegion(GuestAddress from, GuestAddress to) {}
 
 JITBlock CraneliftJIT::FindBlock(GuestAddress address) const {
-    std::lock_guard lock(mutex_);
+    std::lock_guard lock(compiledMutex_);
 
     const auto it = compiledBlocks_.find(address);
     return it != compiledBlocks_.end() ? *it->second : nullptr;
@@ -397,15 +479,30 @@ JITFunction CraneliftJIT::DeclareGuestFunction(GuestAddress address) {
 
 void CraneliftJIT::PublishFunction(cranelift::FuncId id, cranelift::Context& context, GuestAddress start,
                                    GuestAddress end) {
-    if (!context.verify(jit_module_) || !jit_module_.define_function(id, context)
-        || !jit_module_.finalize_definitions())
-        throw std::runtime_error(cranelift::last_error());
+    {
+        diagnostics::PhaseTimer profile(diagnostics::Phase::Verify);
+        if (!context.verify(jit_module_))
+            throw std::runtime_error(cranelift::last_error());
+    }
+    {
+        diagnostics::PhaseTimer profile(diagnostics::Phase::Codegen);
+        if (!jit_module_.define_function(id, context))
+            throw std::runtime_error(cranelift::last_error());
+    }
+    {
+        diagnostics::PhaseTimer profile(diagnostics::Phase::Finalize);
+        if (!jit_module_.finalize_definitions())
+            throw std::runtime_error(cranelift::last_error());
+    }
 
     const JITBlock compiled = jit_module_.get_finalized_function_as<JITBlock>(id);
     if (!compiled)
         throw std::runtime_error("compiled function has no native entry");
 
-    compiledBlocks_.emplace(start, std::make_shared<const JITBlock>(compiled));
+    {
+        std::lock_guard lock(compiledMutex_);
+        compiledBlocks_.emplace(start, std::make_shared<const JITBlock>(compiled));
+    }
     std::lock_guard lock(funcMutex_);
 
     functions_.insert_or_assign(

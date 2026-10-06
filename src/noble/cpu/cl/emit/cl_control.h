@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cl_util.h"
+#include "diagnostics/Performance.h"
 
 static inline void branch_fallback(EmitterContext& e_, Value nia) {
     e_.ins().store(e_.builder.memflags_new(), nia, e_.vCpuState, offsetof(PPCContext, NIA));
@@ -41,12 +42,28 @@ static inline void branch_call(EmitterContext& e_, InstructionInfo& info_, FuncI
 }
 
 static inline void branch(EmitterContext& e_, InstructionInfo& info_, GuestAddress NIA, bool LK) {
-    if (e_.backend && e_.backend->SingleInstruction()) {
+    if (!LK) {
+        const Block label = e_.BlockLookup(NIA);
+        if (label != INVALID_ID) {
+            if (NIA <= info_.mAddress && e_.branchBudget != INVALID_ID) {
+                const auto remaining = e_.ins().iadd_imm(e_.builder.use_var(e_.branchBudget), -1);
+                e_.builder.def_var(e_.branchBudget, remaining);
+                const Block exhausted = e_.builder.create_block();
+                e_.Branch(e_.ins().icmp_imm(IntCC::CL_INTCC_SIGNED_GREATER_THAN, remaining, 0), label, {}, exhausted, {});
+                e_.SwitchToBlock(exhausted);
+                branch_fallback(e_, e_.i32(NIA));
+            } else {
+                e_.Jump(label);
+            }
+            return;
+        }
+    }
+    if (e_.backend && (e_.backend->Debugging() || e_.backend->DispatchBlocks())) {
         branch_fallback(e_, e_.i32(NIA));
         return;
     }
 
-    if (!LK || NIA == info_.mAddress + 4) {
+    if (LK && NIA == info_.mAddress + 4) {
         const Block label = e_.BlockLookup(NIA);
         if (label != INVALID_ID) {
             e_.Jump(label);
@@ -63,12 +80,13 @@ static inline void branch(EmitterContext& e_, InstructionInfo& info_, GuestAddre
 }
 
 static inline void branch_indirect(EmitterContext& e_, InstructionInfo& info_, Value NIA, bool LK) {
-    if (e_.backend && e_.backend->SingleInstruction()) {
+    if (e_.backend && (e_.backend->Debugging() || e_.backend->DispatchBlocks())) {
         branch_fallback(e_, NIA);
         return;
     }
 
     const auto blocks = e_.clBlockMap;
+    diagnostics::Performance::IndirectTargets(LK ? 0 : blocks.size());
 
     if (!LK) {
         for (const auto& [address, label] : blocks) {
@@ -80,28 +98,8 @@ static inline void branch_indirect(EmitterContext& e_, InstructionInfo& info_, V
         }
     }
 
-    const auto functions = e_.backend ? e_.backend->CallableFunctions() : std::vector<JITFunction>{};
-    const Block continuation = LK && !functions.empty() ? e_.builder.create_block() : INVALID_ID;
-
-    for (const auto& function : functions) {
-        const Block call = e_.builder.create_block();
-        const Block next = e_.builder.create_block();
-        const Value matches = e_.ins().icmp(IntCC::CL_INTCC_EQUAL, NIA, e_.i32(function.mStartAddress));
-
-        e_.Branch(matches, call, {}, next, {});
-        e_.SwitchToBlock(call);
-        branch_call(e_, info_, function.m_id, LK);
-
-        if (!e_.terminated)
-            e_.Jump(continuation);
-
-        e_.SwitchToBlock(next);
-    }
-
+    // external indirect targets resolve through the dispatcher's compiled block cache
     branch_fallback(e_, NIA);
-
-    if (continuation != INVALID_ID)
-        e_.SwitchToBlock(continuation);
 }
 
 CLHandler(b) {

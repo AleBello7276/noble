@@ -17,6 +17,8 @@ class CraneliftJIT;
 /* all the stuff needed to emit an instruction */
 struct EmitterContext {
 public:
+    // bound native backedges so the dispatcher can observe stop and scheduler requests
+    cranelift::Variable branchBudget = cranelift::INVALID_ID;
     EmitterContext(PPCFuncMap ranges, cranelift::Value state, cranelift::Value base,
                    cranelift::JITModule& jit_, cranelift::FunctionBuilder& builder_,
                    Memory* memory_ = nullptr, CraneliftJIT* backend_ = nullptr)

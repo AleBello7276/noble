@@ -2,6 +2,7 @@
 
 #include "Logger.h"
 #include "Memory.h"
+#include "diagnostics/Performance.h"
 #include <algorithm>
 #include <assert.h>
 #include <cstring>
@@ -44,6 +45,7 @@ void PPCModule::LoadBinary() {
 }
 
 void PPCModule::AnalyseFunctions() {
+    diagnostics::PhaseTimer profile(diagnostics::Phase::ModuleAnalysis);
     const uint32_t entryPoint = mImage->getEntryPoint();
     const uint32_t imageBase = mImage->getBaseAddress();
     const uint8_t* mData = mImage->getMemoryData();
@@ -202,6 +204,7 @@ void PPCModule::AnalysePDATAFuncs(XLoader::Section* pdata) {
 }
 
 void PPCModule::AnalyseTEXT(XLoader::Section* text) {
+    diagnostics::PhaseTimer profile(diagnostics::Phase::FunctionScan);
     assert(text);  // for debug
 
     if (!text)

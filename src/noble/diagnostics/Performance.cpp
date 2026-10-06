@@ -48,7 +48,7 @@ std::string PerformanceSnapshot::Report() const {
     constexpr std::array names{"module analysis", "function scan",  "function cfg", "emit ir",
                                "verify",          "codegen",        "finalize",     "compile lock wait",
                                "dispatch lookup", "guest execution"};
-    std::string result = "phase                    worker ms      calls\n";
+    std::string result = "worker wall times overlap across threads and nested phases\nphase                    worker ms      calls\n";
     for (size_t i = 0; i < phases.size(); ++i)
         result += std::format("{:23} {:10.3f} {:10}\n", names[i], double(phases[i].nanoseconds) / 1e6,
                               phases[i].calls);
