@@ -6,7 +6,11 @@
 using namespace std;  // only for to_underlying honestly
 inline constexpr auto emitter_dispatch_table = [] {
     std::array<EmitterHandler, to_underlying(PpcOpcode::Count)> table{};
-    table.fill(&cl_illegal_handler);  // init
+    table.fill(nullptr);  // init
+    // fill with nullptr, relying on cl_illegal_handler when it is a stub building in Release
+    // may cause the linker to fold stub function handlers pointers with the same one, that caused
+    // dcbt to be "marked" as illegal / not implemented, this can be fixed by not making illegal handler
+    // empty but filling the list with nullptrs feels more right.
 
     table[to_underlying(PpcOpcode::Mfspr)] = &cl_mfspr_handler;
     table[to_underlying(PpcOpcode::Mtspr)] = &cl_mtspr_handler;

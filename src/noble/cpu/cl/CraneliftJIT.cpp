@@ -251,7 +251,7 @@ bool CraneliftJIT::CompileFunction(const PPCFuncMap& bounds) {
 
         assert(i < emitter_dispatch_table.size());
 
-        if (i >= emitter_dispatch_table.size() || emitter_dispatch_table[i] == &cl_illegal_handler) {
+        if (i >= emitter_dispatch_table.size() || !emitter_dispatch_table[i]) {
             cl_illegal_handler(emitter, info);
             LOG_FATAL("Instruction NYI at {:08X}: {:08X} {} (entry {:08X})\n", address, inst.code,
                       inst.basic().to_string(), funcStart);
@@ -397,7 +397,7 @@ void CraneliftJIT::CompileJITBlock(GuestAddress address) {
                 const size_t opcode = size_t(inst.op);
                 if (pc > address
                     && (opcode >= emitter_dispatch_table.size()
-                        || emitter_dispatch_table[opcode] == &cl_illegal_handler)) {
+                        || !emitter_dispatch_table[opcode])) {
                     bounds.mEnd = pc;
                     break;
                 }
