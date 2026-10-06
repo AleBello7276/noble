@@ -48,6 +48,22 @@ CLHandler(lhzux) {
     emit_load_indexed<16, true>(e_, info_);
 }
 
+CLHandler(lha) {
+    emit_load<16, false, true>(e_, info_);
+}
+
+CLHandler(lhau) {
+    emit_load<16, true, true>(e_, info_);
+}
+
+CLHandler(lhax) {
+    emit_load_indexed<16, false, true>(e_, info_);
+}
+
+CLHandler(lhaux) {
+    emit_load_indexed<16, true, true>(e_, info_);
+}
+
 // word
 CLHandler(lwz) {
     emit_load<32>(e_, info_);
@@ -63,6 +79,26 @@ CLHandler(lwzx) {
 
 CLHandler(lwzux) {
     emit_load_indexed<32, true>(e_, info_);
+}
+
+// TODO:
+CLHandler(lwa) {
+    const auto rd = info_.mInst.field_rd();
+    const auto ra = info_.mInst.field_ra();
+
+    const Value base = ra ? e_.load_gpr(ra) : e_.i64(0);
+    const Value ea = e_.ins().iadd(base, e_.i64(info_.mInst.field_ds()));
+    const Value value = emit_load_value<32, true>(e_, ea);
+
+    e_.store_gpr(rd, value);
+}
+
+CLHandler(lwax) {
+    emit_load_indexed<32, false, true>(e_, info_);
+}
+
+CLHandler(lwaux) {
+    emit_load_indexed<32, true, true>(e_, info_);
 }
 
 // doubleword

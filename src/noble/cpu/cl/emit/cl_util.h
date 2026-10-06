@@ -102,26 +102,27 @@ constexpr auto type_from_bits() {
 }
 
 // loads and converts a value from memory at the given EA
-template <unsigned Bits>
+template <unsigned Bits, bool SignExtend = false>
 inline Value emit_load_value(EmitterContext& e_, Value ea) {
     static_assert(Bits == 8 || Bits == 16 || Bits == 32 || Bits == 64);
 
-    // read memory
     Value value = e_.load_memory(ea, e_.i64(0), type_from_bits<Bits>());
 
-    // skip byte-swap if swapping 1 byte
     if constexpr (Bits > 8)
         value = e_.ins().bswap(value);
 
-    // don't zero extend to 64 if already 64
-    if constexpr (Bits < 64)
-        value = e_.zext64(value);
+    if constexpr (Bits < 64) {
+        if constexpr (SignExtend)
+            value = e_.sext64(value);
+        else
+            value = e_.zext64(value);
+    }
 
     return value;
 }
 
 // emits displacement form loads
-template <unsigned Bits, bool Update = false>
+template <unsigned Bits, bool Update = false, bool SignExtend = false>
 inline void emit_load(EmitterContext& e_, InstructionInfo& info_) {
     static_assert(Bits == 8 || Bits == 16 || Bits == 32 || Bits == 64);
 
@@ -152,7 +153,7 @@ inline void emit_load(EmitterContext& e_, InstructionInfo& info_) {
     Value ea = e_.ins().iadd(base, off);
 
     // read memory
-    Value value = emit_load_value<Bits>(e_, ea);
+    const Value value = emit_load_value<Bits, SignExtend>(e_, ea);
 
     // store read value to destination
     e_.store_gpr(rd, value);
@@ -163,7 +164,7 @@ inline void emit_load(EmitterContext& e_, InstructionInfo& info_) {
 }
 
 // emits indexed form loads
-template <unsigned Bits, bool Update = false>
+template <unsigned Bits, bool Update = false, bool SignExtend = false>
 inline void emit_load_indexed(EmitterContext& e_, InstructionInfo& info_) {
     static_assert(Bits == 8 || Bits == 16 || Bits == 32 || Bits == 64);
 
@@ -188,7 +189,7 @@ inline void emit_load_indexed(EmitterContext& e_, InstructionInfo& info_) {
     Value ea = e_.ins().iadd(base, index);
 
     // read memory
-    Value value = emit_load_value<Bits>(e_, ea);
+    const Value value = emit_load_value<Bits, SignExtend>(e_, ea);
 
     // store read value to destination
     e_.store_gpr(rd, value);
@@ -521,7 +522,7 @@ inline Value make_f32x4(EmitterContext& e_, Value x, Value y, Value z, Value w) 
 inline Value vconst_i32x4(EmitterContext& e_, uint32_t x, uint32_t y, uint32_t z, uint32_t w) {
     const std::array<uint32_t, 4> values = {x, y, z, w};
 
-    return e_.ins().vconst( 
+    return e_.ins().vconst(
         types::I32X4(),
         std::span<const uint8_t>{reinterpret_cast<const uint8_t*>(values.data()), sizeof(values)});
 }

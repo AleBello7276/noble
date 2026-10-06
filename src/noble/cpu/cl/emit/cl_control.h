@@ -211,6 +211,9 @@ CLHandler(bcctr) {
     e_.SwitchToBlock(skipped);
 }
 
+// TODO: same as below
+CLHandler(tdi) {}
+
 // TODO: finish implementation, and hook host handler, for now just assume traps are ignored
 CLHandler(twi) {
     // const auto to = info_.mInst.field_to();  // or field_rt()

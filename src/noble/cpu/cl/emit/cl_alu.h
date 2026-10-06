@@ -409,7 +409,20 @@ CLHandler(extsb) {
     const auto rs = info_.mInst.field_rs();
     const auto rc = info_.mInst.field_rc();
 
-    Value res = e_.sext64(e_.ins().ireduce(types::I8(), e_.load_gpr(rs)));
+    Value res = e_.sext64(e_.reduce8(e_.load_gpr(rs)));
+    e_.store_gpr(ra, res);
+
+    if (rc)
+        e_.record_cr(0, res);
+}
+
+CLHandler(extsh) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
+    const auto rc = info_.mInst.field_rc();
+
+    const Value res = e_.sext64(e_.reduce16(e_.load_gpr(rs)));
+
     e_.store_gpr(ra, res);
 
     if (rc)
@@ -682,6 +695,33 @@ CLHandler(rldicr) {
         e_.record_cr(0, result);
 }
 
+CLHandler(divdu) {
+    const auto oe = info_.mInst.field_oe();
+    const auto rc = info_.mInst.field_rc();
+    const auto rd = info_.mInst.field_rd();
+    const auto ra = info_.mInst.field_ra();
+    const auto rb = info_.mInst.field_rb();
+
+    if (oe) {
+        LOG_FATAL("divdu instruction OE bit not implemented.");
+        assert(false);
+    }
+
+    const Value dividend = e_.load_gpr(ra);
+    const Value divisor = e_.load_gpr(rb);
+
+    const Value is_zero = e_.ins().icmp_imm_u(IntCC::CL_INTCC_EQUAL, divisor, 0);
+    const Value safe_divisor = e_.ins().select(is_zero, e_.i64(1), divisor);
+
+    const Value quotient = e_.ins().udiv(dividend, safe_divisor);
+    const Value result = e_.ins().select(is_zero, e_.i64(0), quotient);
+
+    e_.store_gpr(rd, result);
+
+    if (rc)
+        e_.record_cr(0, result);
+}
+
 CLHandler(divw) {
     const auto oe = info_.mInst.field_oe();
     const auto rc = info_.mInst.field_rc();
@@ -800,6 +840,26 @@ CLHandler(mullw) {
 
     if (rc)
         e_.record_cr(0, res);
+}
+
+CLHandler(mulld) {
+    const auto oe = info_.mInst.field_oe();
+    const auto rc = info_.mInst.field_rc();
+    const auto rd = info_.mInst.field_rd();
+    const auto ra = info_.mInst.field_ra();
+    const auto rb = info_.mInst.field_rb();
+
+    if (oe) {
+        LOG_FATAL("mulld instruction OE bit not implemented.");
+        assert(false);
+    }
+
+    const Value result = e_.ins().imul(e_.load_gpr(ra), e_.load_gpr(rb));
+
+    e_.store_gpr(rd, result);
+
+    if (rc)
+        e_.record_cr(0, result);
 }
 
 CLHandler(mulli) {
