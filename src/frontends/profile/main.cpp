@@ -72,7 +72,8 @@ int main(int argc, char* argv[]) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
-    phase(fault ? "guest fault" : result.load() == -1 ? "timeout" : "completed");
+    const bool timeout = !fault && result.load() == -1;
+    phase(fault ? "guest fault" : timeout ? "timeout" : "completed");
     std::cerr << diagnostics::Performance::Read().Report() << std::flush;
     emulator.RequestStop();
     execution.join();
@@ -80,5 +81,5 @@ int main(int argc, char* argv[]) {
     phase("shutdown");
 
     Logger::SetSink(nullptr);
-    return fault || result.load() == 1 ? 1 : 0;
+    return timeout ? 2 : fault || result.load() == 1 ? 1 : 0;
 }

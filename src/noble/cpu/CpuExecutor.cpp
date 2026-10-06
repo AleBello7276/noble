@@ -2,8 +2,8 @@
 
 #include "Logger.h"
 #include "debugger/Debugger.h"
-#include "diagnostics/TraceEvents.h"
 #include "diagnostics/Performance.h"
+#include "diagnostics/TraceEvents.h"
 #include "emulator/Memory.h"
 #include "kernel/KThread.h"
 #include <exception>
@@ -100,7 +100,9 @@ ExecutionResult CpuExecutor::Execute(PPCContext& context, const std::atomic_bool
 
         {
             diagnostics::PhaseTimer profile(diagnostics::Phase::Execute);
-            if (debugger_) debugSession.BeginBlock(address);
+            if (debugger_)
+                debugSession.BeginBlock(address);
+
             block(&context, memory_.GetMemoryBase());
         }
         if (debugger_)

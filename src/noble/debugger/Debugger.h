@@ -105,4 +105,30 @@ private:
 const char* Name(ThreadStatus status);
 const char* Name(StopReason reason);
 
+// bind synchronous jit checkpoints to the worker's stop token and guest context
+class ExecutionSession {
+public:
+    ExecutionSession(Debugger* debugger, PPCContext& context, const std::atomic_bool& terminate,
+                     std::stop_token stop);
+    ~ExecutionSession();
+    ExecutionSession(const ExecutionSession&) = delete;
+    ExecutionSession& operator=(const ExecutionSession&) = delete;
+    // the dispatcher already checked the first instruction before compilation
+    void BeginBlock(uint32_t address);
+    // record the final instruction or the atomic hle call when native code returns
+    void EndBlock();
+    // called by native code before executing an instruction and returns whether to proceed
+    static uint32_t Instruction(PPCContext* context, uint32_t address);
+
+private:
+    static thread_local ExecutionSession* current_;
+    ExecutionSession* previous_ = nullptr;
+    Debugger* debugger_;
+    PPCContext& context_;
+    const std::atomic_bool& terminate_;
+    std::stop_token stop_;
+    uint32_t address_ = 0;
+    bool prechecked_ = false, pending_ = false, hooked_ = false;
+};
+
 }  // namespace debugger

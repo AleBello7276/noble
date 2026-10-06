@@ -12,6 +12,51 @@
 
 namespace debugger {
 
+thread_local ExecutionSession* ExecutionSession::current_ = nullptr;
+
+ExecutionSession::ExecutionSession(Debugger* debugger, PPCContext& context, const std::atomic_bool& terminate,
+                                   std::stop_token stop)
+    : debugger_(debugger), context_(context), terminate_(terminate), stop_(stop) {
+    if (debugger_) {
+        previous_ = current_;
+        current_ = this;
+    }
+}
+ExecutionSession::~ExecutionSession() {
+    if (debugger_)
+        current_ = previous_;
+}
+void ExecutionSession::BeginBlock(uint32_t address) {
+    address_ = address;
+    prechecked_ = true;
+    pending_ = hooked_ = false;
+}
+void ExecutionSession::EndBlock() {
+    if (debugger_ && (pending_ || !hooked_))
+        debugger_->Executed(context_, address_);
+    pending_ = false;
+}
+uint32_t ExecutionSession::Instruction(PPCContext* context, uint32_t address) {
+    auto* session = current_;
+    if (!session || context != &session->context_)
+        return 0;
+    session->hooked_ = true;
+    if (session->pending_) {
+        context->NIA = address;
+        session->debugger_->Executed(*context, session->address_);
+        session->pending_ = false;
+    }
+    context->CIA = context->NIA = address;
+    const bool proceed
+        = session->prechecked_ ?
+              !session->stop_.stop_requested() && !session->terminate_.load(std::memory_order_acquire) :
+              session->debugger_->Checkpoint(*context, session->terminate_, session->stop_);
+    session->prechecked_ = false;
+    session->address_ = address;
+    session->pending_ = proceed;
+    return proceed ? 1 : 0;
+}
+
 uint32_t Debugger::ThreadId(const PPCContext& context) {
     return context.HostThread ? context.HostThread->id() : 0;
 }

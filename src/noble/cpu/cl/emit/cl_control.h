@@ -49,7 +49,8 @@ static inline void branch(EmitterContext& e_, InstructionInfo& info_, GuestAddre
                 const auto remaining = e_.ins().iadd_imm(e_.builder.use_var(e_.branchBudget), -1);
                 e_.builder.def_var(e_.branchBudget, remaining);
                 const Block exhausted = e_.builder.create_block();
-                e_.Branch(e_.ins().icmp_imm(IntCC::CL_INTCC_SIGNED_GREATER_THAN, remaining, 0), label, {}, exhausted, {});
+                e_.Branch(e_.ins().icmp_imm(IntCC::CL_INTCC_SIGNED_GREATER_THAN, remaining, 0), label, {},
+                          exhausted, {});
                 e_.SwitchToBlock(exhausted);
                 branch_fallback(e_, e_.i32(NIA));
             } else {
