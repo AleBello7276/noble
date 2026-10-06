@@ -353,7 +353,8 @@ CLHandler(lvsl128) {
 }
 
 inline void emit_vperm(EmitterContext& e_, uint32_t vd, uint32_t va, uint32_t vb, uint32_t vc) {
-    const Value swap = e_.ins().splat(types::I8X16(), e_.i8(0x03));
+    // vector loads reverse all bytes, so translate guest indices across the full vector
+    const Value swap = e_.ins().splat(types::I8X16(), e_.i8(0x0F));
     const Value mask = e_.ins().splat(types::I8X16(), e_.i8(0x1F));
     const Value source_bit = e_.ins().splat(types::I8X16(), e_.i8(0x10));
 
