@@ -250,6 +250,17 @@ CLHandler(andi) {
     e_.record_cr(0, res);
 }
 
+CLHandler(andis_) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
+    const auto uimm = info_.mInst.field_uimm();
+
+    const Value result = e_.ins().band_imm_u(e_.load_gpr(rs), zero_extend<16>(uimm) << 16);
+
+    e_.store_gpr(ra, result);
+    e_.record_cr(0, result);
+}
+
 CLHandler(or_) {
     const auto rc = info_.mInst.field_rc();
     const auto ra = info_.mInst.field_ra();
@@ -455,6 +466,19 @@ CLHandler(cntlzw) {
         e_.record_cr(0, ext);
 }
 
+CLHandler(cntlzd) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
+    const auto rc = info_.mInst.field_rc();
+
+    const Value result = e_.ins().clz(e_.load_gpr(rs));
+
+    e_.store_gpr(ra, result);
+
+    if (rc)
+        e_.record_cr(0, result);
+}
+
 CLHandler(slw) {
     const auto ra = info_.mInst.field_ra();
     const auto rs = info_.mInst.field_rs();
@@ -472,6 +496,27 @@ CLHandler(slw) {
     const Value result32 = e_.ins().select(in_range, shifted, e_.i32(0));
 
     const Value result = e_.zext64(result32);
+
+    e_.store_gpr(ra, result);
+
+    if (rc)
+        e_.record_cr(0, result);
+}
+
+CLHandler(sld) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
+    const auto rb = info_.mInst.field_rb();
+    const auto rc = info_.mInst.field_rc();
+
+    const Value source = e_.load_gpr(rs);
+    const Value count = e_.ins().band_imm_u(e_.load_gpr(rb), 0x7F);
+
+    const Value shifted = e_.ins().ishl(source, count);
+    const Value out_of_range = e_.ins().band_imm_u(count, 0x40);
+    const Value in_range = e_.ins().icmp_imm_u(IntCC::CL_INTCC_EQUAL, out_of_range, 0);
+
+    const Value result = e_.ins().select(in_range, shifted, e_.i64(0));
 
     e_.store_gpr(ra, result);
 
@@ -548,6 +593,32 @@ CLHandler(srawi) {
         e_.record_cr(0, result);
 }
 
+CLHandler(rldimi) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
+    const auto sh = info_.mInst.field_sh64();
+    const auto mb = info_.mInst.field_mb64();
+    const auto rc = info_.mInst.field_rc();
+
+    const uint64_t mask = PPCMASK(mb, (~sh) & 63);
+
+    const Value source = e_.load_gpr(rs);
+    const Value rotated = sh ? e_.ins().rotl_imm_u(source, sh) : source;
+
+    Value result = rotated;
+
+    if (mask != UINT64_MAX) {
+        const Value old = e_.load_gpr(ra);
+
+        result = e_.ins().bor(e_.ins().band(rotated, e_.i64(mask)), e_.ins().band(old, e_.i64(~mask)));
+    }
+
+    e_.store_gpr(ra, result);
+
+    if (rc)
+        e_.record_cr(0, result);
+}
+
 CLHandler(rlwimi) {
     const auto ra = info_.mInst.field_ra();
     const auto rs = info_.mInst.field_rs();
@@ -576,6 +647,34 @@ CLHandler(rlwimi) {
         // result = (inserted & mask) | (old_ra & ~mask)
         result = e_.ins().bitselect(e_.i64(mask), inserted, old_ra);
     }
+
+    e_.store_gpr(ra, result);
+
+    if (rc)
+        e_.record_cr(0, result);
+}
+
+CLHandler(rlwnm) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
+    const auto rb = info_.mInst.field_rb();
+    const auto mb = info_.mInst.field_mb();
+    const auto me = info_.mInst.field_me();
+    const auto rc = info_.mInst.field_rc();
+
+    const Value word = e_.reduce32(e_.load_gpr(rs));
+    const Value shift = e_.ins().band_imm_u(e_.reduce32(e_.load_gpr(rb)), 0x1F);
+
+    const Value rotated = e_.ins().rotl(word, shift);
+    const uint64_t mask = PPCMASK(mb + 32, me + 32);
+
+    Value result = e_.zext64(rotated);
+
+    if (mask >> 32)
+        result = e_.ins().bor(result, e_.ins().ishl_imm_u(result, 32));
+
+    if (mask != UINT64_MAX)
+        result = e_.ins().band(result, e_.i64(mask));
 
     e_.store_gpr(ra, result);
 
@@ -639,8 +738,8 @@ CLHandler(rldicl) {
     const auto ra = info_.mInst.field_ra();
     const auto rs = info_.mInst.field_rs();
     const auto rc = info_.mInst.field_rc();
-    const auto sh = info_.mInst.field_sh();
-    const auto mb = info_.mInst.field_mb();
+    const auto sh = info_.mInst.field_sh64();
+    const auto mb = info_.mInst.field_mb64();
 
     const uint64_t mask = PPCMASK(mb, 63);
     const Value source = e_.load_gpr(rs);
@@ -670,8 +769,8 @@ CLHandler(rldicr) {
     const auto ra = info_.mInst.field_ra();
     const auto rs = info_.mInst.field_rs();
     const auto rc = info_.mInst.field_rc();
-    const auto sh = info_.mInst.field_sh();
-    const auto me = info_.mInst.field_mb();
+    const auto sh = info_.mInst.field_sh64();
+    const auto me = info_.mInst.field_mb64();
 
     const uint64_t mask = PPCMASK(0, me);
     const Value source = e_.load_gpr(rs);
@@ -943,4 +1042,61 @@ CLHandler(eqv) {
 
     if (rc)
         e_.record_cr(0, res);
+}
+
+CLHandler(subfze) {
+    const auto oe = info_.mInst.field_oe();
+    const auto rc = info_.mInst.field_rc();
+    const auto rd = info_.mInst.field_rd();
+    const auto ra = info_.mInst.field_ra();
+
+    const Value source = e_.load_gpr(ra);
+    const Value ca_in = e_.load_ca();
+
+    const Value not_ra = e_.ins().bnot(source);
+    const Value ca64 = e_.zext64(ca_in);
+
+    const auto [result, ca_out] = e_.ins().uadd_overflow(not_ra, ca64);
+
+    e_.store_gpr(rd, result);
+
+    if (oe) {
+        LOG_FATAL("subfze OE bit not implemented.");
+        assert(false);
+    } else {
+        e_.store_ca(ca_out);
+    }
+
+    if (rc)
+        e_.record_cr(0, result);
+}
+
+CLHandler(sraw) {
+    const auto ra = info_.mInst.field_ra();
+    const auto rs = info_.mInst.field_rs();
+    const auto rb = info_.mInst.field_rb();
+    const auto rc = info_.mInst.field_rc();
+
+    const Value word = e_.reduce32(e_.load_gpr(rs));
+    const Value count = e_.ins().band_imm_u(e_.reduce32(e_.load_gpr(rb)), 0x3F);
+
+    const Value ge32 = e_.ins().icmp_imm_u(IntCC::CL_INTCC_UNSIGNED_GREATER_THAN_OR_EQUAL, count, 32);
+
+    const Value shift = e_.ins().select(ge32, e_.i32(31), count);
+    const Value shifted = e_.ins().sshr(word, shift);
+
+    const Value negative = e_.ins().icmp_imm_s(IntCC::CL_INTCC_SIGNED_LESS_THAN, word, 0);
+
+    const Value restored = e_.ins().ishl(shifted, shift);
+    const Value discarded = e_.ins().icmp(IntCC::CL_INTCC_NOT_EQUAL, restored, word);
+
+    const Value ca = e_.ins().select(ge32, negative, e_.ins().band(negative, discarded));
+
+    e_.store_ca(ca);
+
+    const Value result = e_.sext64(shifted);
+    e_.store_gpr(ra, result);
+
+    if (rc)
+        e_.record_cr(0, result);
 }

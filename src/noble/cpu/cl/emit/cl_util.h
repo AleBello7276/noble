@@ -526,3 +526,20 @@ inline Value vconst_i32x4(EmitterContext& e_, uint32_t x, uint32_t y, uint32_t z
         types::I32X4(),
         std::span<const uint8_t>{reinterpret_cast<const uint8_t*>(values.data()), sizeof(values)});
 }
+
+inline Value load_cr_field(EmitterContext& e_, uint32_t field) {
+    const auto flags = e_.builder.memflags_new();
+
+    const Value lt = e_.ins().load(types::I8(), flags, e_.vCpuState, CRFieldBitOffset(field, 0));
+    const Value gt = e_.ins().load(types::I8(), flags, e_.vCpuState, CRFieldBitOffset(field, 1));
+    const Value eq = e_.ins().load(types::I8(), flags, e_.vCpuState, CRFieldBitOffset(field, 2));
+    const Value so = e_.ins().load(types::I8(), flags, e_.vCpuState, CRFieldBitOffset(field, 3));
+
+    Value value = e_.ins().ishl_imm_u(e_.zext64(lt), 3);
+    value = e_.ins().bor(value, e_.ins().ishl_imm_u(e_.zext64(gt), 2));
+    value = e_.ins().bor(value, e_.ins().ishl_imm_u(e_.zext64(eq), 1));
+    value = e_.ins().bor(value, e_.zext64(so));
+
+    const uint32_t shift = (7 - field) * 4;
+    return shift ? e_.ins().ishl_imm_u(value, shift) : value;
+}

@@ -318,3 +318,35 @@ CLHandler(mtmsrd) {
 
     e_.store_msr(new_msr);
 }
+
+CLHandler(mfcr) {
+    const auto rd = info_.mInst.field_rd();
+    // const auto spr = info_.mInst.field_spr();
+    //
+    // Value result = e_.i64(0);
+    //
+    // if (spr & (1u << 9)) {
+    //    const uint32_t fxm = (spr & 0x1FF) >> 1;
+    //
+    //    uint32_t count = 0;
+    //    uint32_t field = 0;
+    //
+    //    for (uint32_t b = 0; b < 8; ++b) {
+    //        if (fxm & (1u << b)) {
+    //            field = 7 - b;
+    //            ++count;
+    //        }
+    //    }
+    //
+    //    if (count == 1)
+    //        result = load_cr_field(e_, field);
+    //} else {
+    //}
+
+    Value result = e_.i64(0);
+
+    for (uint32_t field = 0; field < 8; ++field)
+        result = e_.ins().bor(result, load_cr_field(e_, field));
+
+    e_.store_gpr(rd, result);
+}
