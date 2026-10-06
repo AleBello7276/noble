@@ -54,6 +54,10 @@ void KeLeaveCriticalRegion(KThread& thread) {
     thread.LeaveCriticalRegion();
 }
 
+void KeEnableFpuExceptions(KThread& thread, uint32_t enabled) {
+    thread.EnableFpuExceptions(enabled != 0);
+}
+
 void KeInitializeDpc(Pointer<XDPC> dpc, GuestAddress routine, GuestAddress context) {
     dpc->Initialize(routine, context);
 }
@@ -190,6 +194,7 @@ constexpr std::array exports{
     Bind<&KeGetCurrentProcessType>(XboxLibrary::XboxKrnl, "KeGetCurrentProcessType"),
     Bind<&KeEnterCriticalRegion>(XboxLibrary::XboxKrnl, "KeEnterCriticalRegion"),
     Bind<&KeLeaveCriticalRegion>(XboxLibrary::XboxKrnl, "KeLeaveCriticalRegion"),
+    Bind<&KeEnableFpuExceptions>(XboxLibrary::XboxKrnl, "KeEnableFpuExceptions"),
     Bind<&KeTlsAlloc>(XboxLibrary::XboxKrnl, "KeTlsAlloc"),
     Bind<&KeTlsFree>(XboxLibrary::XboxKrnl, "KeTlsFree"),
     Bind<&KeTlsGetValue>(XboxLibrary::XboxKrnl, "KeTlsGetValue"),

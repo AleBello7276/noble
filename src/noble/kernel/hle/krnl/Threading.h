@@ -27,6 +27,9 @@ XNTSTATUS KeSetAffinityThread(Kernel& kernel, KThread& caller, PPCContext& cpu, 
                               uint32_t affinity,
                               Pointer<be<uint32_t>, PointerValidation::Report> previousAffinity);
 
+// update the calling thread flag without delivering floating point exceptions
+void KeEnableFpuExceptions(KThread& thread, uint32_t enabled);
+
 // expose the typed threading implementations for kernel export registration
 std::span<const Export> ThreadingExports();
 

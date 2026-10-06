@@ -467,3 +467,49 @@ CLHandler(fmsubs) {
     e_.store_fpr(frt, res);
     e_.update_fpscr(rc);
 }
+
+CLHandler(mffs) {
+    const auto frt = info_.mInst.field_frd();
+    const auto rc = info_.mInst.field_rc();
+
+    const Value bits = e_.zext64(e_.load_fpscr());
+    const Value value = e_.ins().bitcast(types::F64(), MemFlags{}, bits);
+
+    e_.store_fpr(frt, value);
+
+    if (rc)
+        e_.copy_fpscr_to_cr1();
+}
+
+CLHandler(mtfsf) {
+    const auto frb = info_.mInst.field_frb();
+    const auto l = info_.mInst.field_l();
+    const auto fm = info_.mInst.field_mtfsf_fm();
+    const auto rc = info_.mInst.field_rc();
+
+    const Value bits = e_.ins().bitcast(types::I64(), MemFlags{}, e_.load_fpr(frb));
+    Value value = e_.reduce32(bits);
+
+    if (l) {
+        e_.store_fpscr(value);
+        return;
+    }
+
+    uint32_t mask = 0;
+
+    for (uint32_t i = 0; i < 8; ++i) {
+        if (fm & (1u << (i ^ 7)))
+            mask |= 0xFu << (i * 4);
+    }
+
+    if (mask != UINT32_MAX) {
+        const Value old = e_.load_fpscr();
+
+        value = e_.ins().bor(e_.ins().band_imm_u(value, mask), e_.ins().band_imm_u(old, ~mask));
+    }
+
+    e_.store_fpscr(value);
+
+    if (rc)
+        e_.copy_fpscr_to_cr1();
+}

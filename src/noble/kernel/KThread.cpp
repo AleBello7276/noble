@@ -16,6 +16,14 @@ void KThread::LeaveCriticalRegion() {
     ++guestThread_->apcDisableCount;
 }
 
+void KThread::EnableFpuExceptions(bool enabled) {
+    if (!guestThread_)
+        throw std::runtime_error("guest thread has no kthread object");
+
+    // guest floating point exception delivery is not implemented yet
+    guestThread_->fpuExceptions = enabled;
+}
+
 void KThread::SyncGuestState() {
     if (!guestThread_)
         return;

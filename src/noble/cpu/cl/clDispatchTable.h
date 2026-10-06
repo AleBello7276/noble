@@ -92,6 +92,8 @@ inline constexpr auto emitter_dispatch_table = [] {
     table[to_underlying(PpcOpcode::Frsp)] = &cl_frsp_handler;
     table[to_underlying(PpcOpcode::Fmsub)] = &cl_fmsub_handler;
     table[to_underlying(PpcOpcode::Fmsubs)] = &cl_fmsubs_handler;
+    table[to_underlying(PpcOpcode::Mffs)] = &cl_mffs_handler;
+    table[to_underlying(PpcOpcode::Mtfsf)] = &cl_mtfsf_handler;
 
     table[to_underlying(PpcOpcode::Dcbt)] = &cl_dcbt_handler;
     table[to_underlying(PpcOpcode::Dcbtst)] = &cl_dcbtst_handler;

@@ -75,6 +75,9 @@ public:
     // increment the guest apc disable count to leave one level of a critical region
     void LeaveCriticalRegion();
 
+    // record the guest fpu exception setting without enabling host floating point traps
+    void EnableFpuExceptions(bool enabled);
+
 public:
     PPCContext mContext{};
     GuestAddress mStackBase = 0;
