@@ -358,7 +358,7 @@ CLHandler(cmpi) {
 CLHandler(cmpli) {
     const auto l = info_.mInst.field_l();
     const auto ra = info_.mInst.field_ra();
-    const auto simm = info_.mInst.field_simm();
+    const auto uimm = info_.mInst.field_uimm();
     const auto crfd = info_.mInst.field_crfd();
 
     Value lhs;
@@ -366,10 +366,10 @@ CLHandler(cmpli) {
 
     if (l) {
         lhs = e_.load_gpr(ra);
-        rhs = e_.i64(sign_extend<16>(simm));
+        rhs = e_.i64(zero_extend<16>(uimm));
     } else {
         lhs = e_.ins().ireduce(types::I32(), e_.load_gpr(ra));
-        rhs = e_.i32(sign_extend<16>(simm));
+        rhs = e_.i32(zero_extend<16>(uimm));
     }
 
     e_.record_cr<false>(crfd, lhs, rhs);
