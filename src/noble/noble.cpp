@@ -11,7 +11,8 @@
 */
 
 int main(int argc, char* argv[]) try {
-    const auto launch = config::ParseLaunch(argc, argv, config::Frontend::Normal, "test/dolphin/dolphin.xex");
+    const auto launch = config::ParseLaunch(argc, argv, config::Frontend::Normal,
+                                            "F:/Stuff/noble/test/dolphin/dolphin.xex");
     if (launch.help) {
         std::cout << config::Help(argv[0]);
         return 0;

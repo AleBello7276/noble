@@ -11,6 +11,7 @@
 #include "krnl/Variables.h"
 #include "krnl/Video.h"
 #include "krnl/XConfig.h"
+#include "xam/Input.h"
 #include "xam/Video.h"
 #include <array>
 #include <unordered_set>
@@ -21,7 +22,7 @@ void RegisterExports(Registry& registry) {
     const std::array groups{krnl::ThreadingExports(), krnl::RtlExports(),   krnl::MemoryExports(),
                             krnl::ModuleExports(),    krnl::VideoExports(), xam::VideoExports(),
                             krnl::XConfigExports(),   krnl::ObjectExports(), krnl::IOExports(),
-                            krnl::DebugExports()};
+                            krnl::DebugExports(),     xam::InputExports()};
 
     std::unordered_set<uint64_t> registered;
 

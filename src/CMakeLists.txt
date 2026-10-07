@@ -74,6 +74,7 @@ set(Kernel
     noble/kernel/hle/krnl/Video.cpp
     noble/kernel/hle/krnl/XConfig.cpp
     noble/kernel/hle/xam/Video.cpp
+    noble/kernel/hle/xam/Input.cpp
 )
 
 
