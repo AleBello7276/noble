@@ -72,7 +72,7 @@ void Debugger::BindMemory(Memory* memory) {
 }
 
 bool Debugger::Checkpoint(PPCContext& context, const std::atomic_bool& terminate, std::stop_token stop,
-                          bool hle) {
+                          bool hle, bool guestBreakpoint) {
     std::unique_lock lock(mutex_);
     auto [it, inserted] = threads_.try_emplace(ThreadId(context));
     auto& state = it->second;
@@ -88,6 +88,8 @@ bool Debugger::Checkpoint(PPCContext& context, const std::atomic_bool& terminate
     StopReason reason = StopReason::None;
     if (context.Fault != PPCFault::None)
         reason = StopReason::Fault;
+    else if (guestBreakpoint)
+        reason = StopReason::Breakpoint;
     else if (state.pause)
         reason = StopReason::Pause;
     else if (breakpoints_.contains(context.CIA))

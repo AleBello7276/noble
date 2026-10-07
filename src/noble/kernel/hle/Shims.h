@@ -238,7 +238,7 @@ private:
             Context context(*cpu, registry->kernel_, registry->memory_);
             Function(context);
 
-            if (cpu->Fault == PPCFault::None)
+            if (cpu->Fault == PPCFault::None && cpu->Action != HostAction::DebugBreak)
                 cpu->CIA = static_cast<uint32_t>(cpu->SPRs.LR) & ~uint32_t(3);
         } catch (const std::exception& error) {
             ReportFailure(*cpu, ordinal, thunkAddress, error.what());

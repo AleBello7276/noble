@@ -1,21 +1,13 @@
 #include "Debug.h"
 
+#include "Logger.h"
 #include <array>
-
-#ifdef _WIN32
-#include <intrin.h>
-#else
-#include <csignal>
-#endif
 
 namespace hle::krnl {
 
-void DbgBreakPoint() {
-#ifdef _WIN32
-    __debugbreak();
-#else
-    std::raise(SIGTRAP);
-#endif
+void DbgBreakPoint(PPCContext& cpu) {
+    LOG_ERROR("Guest DbgBreakPoint at {:08X} (caller return {:08X})\n", cpu.CIA, uint32_t(cpu.SPRs.LR));
+    cpu.Action = HostAction::DebugBreak;
 }
 
 constexpr std::array exports{

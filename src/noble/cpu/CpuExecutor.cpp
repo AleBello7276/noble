@@ -113,6 +113,19 @@ ExecutionResult CpuExecutor::Execute(PPCContext& context, const std::atomic_bool
         if (context.Fault != PPCFault::None)
             return finish(ExecutionReason::Fault, context.FaultAddress);
 
+        if (context.Action == HostAction::DebugBreak) {
+            context.Action = HostAction::None;
+            if (!debugger_) {
+                context.Fault = PPCFault::DebugBreakpoint;
+                context.FaultAddress = context.CIA;
+                return finish(ExecutionReason::Fault, context.FaultAddress);
+            }
+
+            // park at the completed shim and continue at its saved return address
+            if (!debugger_->Checkpoint(context, terminate, stop, true, true))
+                return finish(ExecutionReason::Exited);
+        }
+
         context.CIA = context.NIA;
         if (context.Action == HostAction::Wait) {
             context.Action = HostAction::None;

@@ -4,8 +4,8 @@
 
 namespace hle::krnl {
 
-// raise a host debugger breakpoint and resume when the debugger continues execution
-void DbgBreakPoint();
+// request a guest debugger stop after this shim returns to the dispatcher
+void DbgBreakPoint(PPCContext& cpu);
 
 // expose the typed debugging implementations for kernel export registration
 std::span<const Export> DebugExports();

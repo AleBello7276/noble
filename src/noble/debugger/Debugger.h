@@ -75,7 +75,7 @@ public:
 
     // executor integration, called only by the worker that owns this context
     bool Checkpoint(PPCContext& context, const std::atomic_bool& terminate, std::stop_token stop,
-                    bool hle = false);
+                    bool hle = false, bool guestBreakpoint = false);
     void Executed(const PPCContext& context, uint32_t address);
     void Inactive(const PPCContext& context, ThreadStatus status);
     void BindMemory(Memory* memory);

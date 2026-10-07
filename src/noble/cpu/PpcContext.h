@@ -204,9 +204,11 @@ struct FPSCRr {
 
 class KThread;
 
-enum class PPCFault : uint32_t { None, UnimplementedImport, HLEFailure, UncompiledTarget, MemoryAccess };
+enum class PPCFault : uint32_t {
+    None, UnimplementedImport, HLEFailure, UncompiledTarget, MemoryAccess, DebugBreakpoint
+};
 
-enum class HostAction : uint32_t { None, Wait, Yield };
+enum class HostAction : uint32_t { None, Wait, Yield, DebugBreak };
 
 // a Xenon Register File
 struct PPCContext {
