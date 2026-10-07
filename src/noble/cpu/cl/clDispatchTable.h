@@ -80,6 +80,8 @@ inline constexpr auto emitter_dispatch_table = [] {
     table[to_underlying(PpcOpcode::Subfze)] = &cl_subfze_handler;
     table[to_underlying(PpcOpcode::Rldimi)] = &cl_rldimi_handler;
     table[to_underlying(PpcOpcode::Sraw)] = &cl_sraw_handler;
+    table[to_underlying(PpcOpcode::Nand)] = &cl_nand_handler;
+    table[to_underlying(PpcOpcode::Addme)] = &cl_addme_handler;
 
     table[to_underlying(PpcOpcode::Fmul)] = &cl_fmul_handler;
     table[to_underlying(PpcOpcode::Fmuls)] = &cl_fmuls_handler;

@@ -27,6 +27,9 @@ struct AnsiString {
 static_assert(sizeof(AnsiString) == 8);
 static_assert(offsetof(AnsiString, buffer) == 4);
 
+// repeat a big endian word over length bytes rounded down to a multiple of four
+void RtlFillMemoryUlong(Memory& memory, GuestAddress destination, uint32_t length, uint32_t pattern);
+
 // initialize an ansi descriptor from an optional terminated source without allocating or copying it
 void RtlInitAnsiString(Memory& memory, Pointer<AnsiString> destination, Pointer<const char> source);
 

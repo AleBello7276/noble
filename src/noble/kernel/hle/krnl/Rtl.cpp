@@ -88,6 +88,20 @@ uint32_t RtlNtStatusToDosError(uint32_t status) {
 }
 
 
+// fill complete guest words with the big endian pattern and leave trailing bytes untouched
+// validate the entire written range before storing and allow empty fills without a destination
+void RtlFillMemoryUlong(Memory& memory, GuestAddress destination, uint32_t length, uint32_t pattern) {
+    const uint32_t byteCount = length & ~3u;
+    if (!byteCount)
+        return;
+
+    if (!destination || !memory.IsAccessible(destination, byteCount, true))
+        throw std::out_of_range("rtl fill destination is not in writable guest memory");
+
+    auto* words = static_cast<be<uint32_t>*>(memory.Translate(destination, byteCount));
+    std::fill_n(words, byteCount / sizeof(uint32_t), be<uint32_t>(pattern));
+}
+
 // count accessible guest characters with room for the terminator in the 16 bit maximum length
 void RtlInitAnsiString(Memory& memory, Pointer<AnsiString> destination, Pointer<const char> source) {
     AnsiString string{};
@@ -181,6 +195,7 @@ uint32_t RtlImageXexHeaderField(Memory& memory, Pointer<const XexHeader> header,
 }
 
 constexpr std::array exports{
+    Bind<&RtlFillMemoryUlong>(XboxLibrary::XboxKrnl, "RtlFillMemoryUlong"),
     Bind<&RtlInitAnsiString>(XboxLibrary::XboxKrnl, "RtlInitAnsiString"),
     Bind<&RtlEnterCriticalSection>(XboxLibrary::XboxKrnl, "RtlEnterCriticalSection"),
     Bind<&RtlTryEnterCriticalSection>(XboxLibrary::XboxKrnl, "RtlTryEnterCriticalSection"),

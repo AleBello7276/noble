@@ -30,6 +30,7 @@ bool NullGPU::Initialize() {
     const auto mode = GetDisplayMode();
     registers[static_cast<uint32_t>(gpu::Register::D1MODE_VIEWPORT_SIZE)] = (mode.width << 16) | mode.height;
 
+    scaledAspectRatio_ = {};
     engineParameters_ = {};
     ringBuffer_ = {};
     readPointerWriteBack_ = {};
@@ -45,6 +46,7 @@ void NullGPU::Shutdown() {
     std::lock_guard lock(mutex_);
     if (initialized_)
         memory_.FreeVirtual(kRegisterBase);
+    scaledAspectRatio_ = {};
     engineParameters_ = {};
     ringBuffer_ = {};
     readPointerWriteBack_ = {};
@@ -57,6 +59,16 @@ void NullGPU::Shutdown() {
 
 GPUBackend::DisplayMode NullGPU::GetDisplayMode() const {
     return {};
+}
+
+void NullGPU::SetScaledAspectRatio(AspectRatio aspect) {
+    std::lock_guard lock(mutex_);
+    scaledAspectRatio_ = aspect;
+}
+
+GPUBackend::AspectRatio NullGPU::GetScaledAspectRatio() const {
+    std::lock_guard lock(mutex_);
+    return scaledAspectRatio_;
 }
 
 bool NullGPU::InitializeEngines(const EngineParameters& parameters) {

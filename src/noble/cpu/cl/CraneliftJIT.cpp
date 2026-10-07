@@ -13,13 +13,6 @@
 #include "clDispatchTable.h"
 #include "kernel/hle/Shims.h"
 
-// TODO: move this
-static void host_yield() {
-    LOG_FATAL("Unhandled yield.");
-    throw std::runtime_error("Unhandled yield.");
-    assert(false);
-}
-
 static uint64_t host_load_clock() {
     return HostClock::GetInstance().GetGuestTickCount();
 }
@@ -57,16 +50,11 @@ CraneliftJIT::CraneliftJIT(Memory& memory, bool debugging, const config::JITConf
     if (!jit_builder_)
         throw std::runtime_error(cranelift::last_error());
 
-    jit_builder_.symbol("host_yield", host_yield);
     jit_builder_.symbol("host_load_clock", host_load_clock);
     if (debugging_)
         jit_builder_.symbol("host_debug_instruction", &debugger::ExecutionSession::Instruction);
 
     jit_module_ = cranelift::JITModule(std::move(jit_builder_));
-
-    auto yield_sig = jit_module_.make_signature();
-    host_yield_id
-        = jit_module_.declare_function("host_yield", cranelift::Linkage::CL_LINKAGE_IMPORT, yield_sig);
 
     auto clock_sig = jit_module_.make_signature();
     clock_sig.push_return(cranelift::types::I64());

@@ -12,6 +12,11 @@ public:
         float refreshRate = 60.0f;
     };
 
+    struct AspectRatio {
+        uint64_t width = 16;
+        uint64_t height = 9;
+    };
+
     struct InterruptCallback {
         uint32_t routine = 0;
         uint32_t userData = 0;
@@ -47,6 +52,12 @@ public:
 
     // return the display mode reported to guest software
     virtual DisplayMode GetDisplayMode() const = 0;
+
+    // retain the presentation aspect after guest hardware scaling
+    virtual void SetScaledAspectRatio(AspectRatio aspect) = 0;
+
+    // copy the current presentation aspect for display backends
+    virtual AspectRatio GetScaledAspectRatio() const = 0;
 
     // configure the guest graphics engines from opaque guest addresses
     virtual bool InitializeEngines(const EngineParameters& parameters) = 0;

@@ -22,6 +22,10 @@ public:
 
     DisplayMode GetDisplayMode() const override;
 
+    void SetScaledAspectRatio(AspectRatio aspect) override;
+
+    AspectRatio GetScaledAspectRatio() const override;
+
     bool InitializeEngines(const EngineParameters& parameters) override;
 
     void ShutdownEngines() override;
@@ -53,6 +57,7 @@ private:
     mutable std::mutex mutex_;
     bool initialized_ = false;
     bool enginesInitialized_ = false;
+    AspectRatio scaledAspectRatio_;
     EngineParameters engineParameters_;
     RingBuffer ringBuffer_;
     ReadPointerWriteBack readPointerWriteBack_;

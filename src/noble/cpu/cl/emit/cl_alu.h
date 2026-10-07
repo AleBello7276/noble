@@ -271,8 +271,12 @@ CLHandler(or_) {
     if (ra == rb && rb == rs && rc == 0) {
         // or r31, r31, r31 (db16cyc)
         if (info_.mInst.code == 0x7FFFFB78) {
-            auto func_ref = e_.builder.declare_func_in_func(e_.jit, e_.backend->host_yield_id);
-            e_.ins().call(func_ref);
+            // return to the scheduler with architectural state intact and resume after the hint
+            const auto flags = e_.builder.memflags_new();
+            e_.ins().store(flags, e_.i32(static_cast<uint32_t>(HostAction::Yield)), e_.vCpuState,
+                           offsetof(PPCContext, Action));
+            e_.ins().store(flags, e_.i32(info_.mAddress + 4), e_.vCpuState, offsetof(PPCContext, NIA));
+            e_.Return();
             return;
         }
 
@@ -1096,6 +1100,47 @@ CLHandler(sraw) {
 
     const Value result = e_.sext64(shifted);
     e_.store_gpr(ra, result);
+
+    if (rc)
+        e_.record_cr(0, result);
+}
+
+CLHandler(nand) {
+    const auto rs = info_.mInst.field_rs();
+    const auto ra = info_.mInst.field_ra();
+    const auto rb = info_.mInst.field_rb();
+    const auto rc = info_.mInst.field_rc();
+
+    const Value result = e_.ins().bnot(e_.ins().band(e_.load_gpr(rs), e_.load_gpr(rb)));
+
+    e_.store_gpr(ra, result);
+
+    if (rc)
+        e_.record_cr(0, result);
+}
+
+CLHandler(addme) {
+    const auto oe = info_.mInst.field_oe();
+    const auto rc = info_.mInst.field_rc();
+    const auto rd = info_.mInst.field_rd();
+    const auto ra = info_.mInst.field_ra();
+
+    const Value source = e_.load_gpr(ra);
+    const Value ca_in = e_.load_ca();
+    const Value ca64 = e_.zext64(ca_in);
+
+    const Value result = e_.ins().iadd(e_.ins().iadd_imm_s(source, -1), ca64);
+
+    e_.store_gpr(rd, result);
+
+    if (oe) {
+        LOG_FATAL("addme OE bit not implemented.");
+        assert(false);
+    } else {
+        const Value nonzero = e_.ins().icmp_imm_u(IntCC::CL_INTCC_NOT_EQUAL, source, 0);
+
+        e_.store_ca(e_.ins().bor(ca_in, nonzero));
+    }
 
     if (rc)
         e_.record_cr(0, result);

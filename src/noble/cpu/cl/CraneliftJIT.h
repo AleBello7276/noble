@@ -88,7 +88,6 @@ private:
     std::unordered_map<GuestAddress, std::shared_ptr<const JITBlock>> compiledBlocks_;
 
 public:
-    cranelift::FuncId host_yield_id;
     cranelift::FuncId host_load_clock_id;
     cranelift::FuncId host_debug_instruction_id;
 };

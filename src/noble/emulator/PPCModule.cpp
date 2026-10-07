@@ -109,14 +109,16 @@ void PPCModule::BuildFunctionCFG(PPCFuncMap& function, std::span<const uint8_t> 
 
         const codec::Ins inst(byte_swap(word));
 
-        if (!inst.is_branch())
+        // db16cyc returns to the dispatcher and needs an entry for its continuation
+        const bool yields = inst.code == 0x7FFFFB78;
+        if (!inst.is_branch() && !yields)
             continue;
 
-        // every branch has a separate continuation even if its target is resolved at runtime
+        // every branch or yield has a separate continuation even if its target is resolved at runtime
         if (pc + 4 < function.mEnd)
             boundaries.push_back(pc + 4);
 
-        if (!inst.field_lk()) {
+        if (inst.is_branch() && !inst.field_lk()) {
             if (const auto target = inst.branch_dest(pc);
                 target && *target >= function.mStart && *target < function.mEnd)
                 boundaries.push_back(*target);
@@ -153,7 +155,7 @@ PPCFuncMap PPCModule::AnalyseJITBlock(Memory& memory, GuestAddress address, uint
 
         const codec::Ins inst(byte_swap(word));
 
-        if (inst.is_branch() || inst.op == PpcOpcode::Illegal) {
+        if (inst.is_branch() || inst.code == 0x7FFFFB78 || inst.op == PpcOpcode::Illegal) {
             tailCall = inst.is_unconditional_branch() && !inst.field_lk();
             break;
         }
