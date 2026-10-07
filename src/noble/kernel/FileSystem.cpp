@@ -273,16 +273,10 @@ XNTSTATUS FileSystem::Resolve(std::string_view guestPath, const std::shared_ptr<
     return STATUS_SUCCESS;
 }
 
-QueryResult FileSystem::Query(std::string_view name, const std::shared_ptr<File>& root) {
-    std::scoped_lock lock(mutex_);
+static QueryResult QueryMetadata(const std::filesystem::path& path, bool readOnlyMount) {
     QueryResult result;
-    ResolvedPath resolved;
-    result.status = Resolve(name, root, resolved);
-    if (result.status != STATUS_SUCCESS)
-        return result;
-
     std::error_code error;
-    const auto state = std::filesystem::status(resolved.path, error);
+    const auto state = std::filesystem::status(path, error);
     if (error || !std::filesystem::exists(state)) {
         result.status = !error || error == std::errc::no_such_file_or_directory ? X_STATUS_NO_SUCH_FILE :
                                                                                   HostError(error);
@@ -297,15 +291,19 @@ QueryResult FileSystem::Query(std::string_view name, const std::shared_ptr<File>
 
     auto& info = result.information;
     if (!directory) {
-        info.endOfFile = std::filesystem::file_size(resolved.path, error);
+        info.endOfFile = std::filesystem::file_size(path, error);
         if (error) {
             result.status = HostError(error);
             return result;
         }
         info.allocationSize = info.endOfFile;
+        const auto links = std::filesystem::hard_link_count(path, error);
+        if (!error)
+            info.numberOfLinks = static_cast<uint32_t>((std::min)(links, uintmax_t(UINT32_MAX)));
+        error.clear();
     }
 
-    const auto modified = std::filesystem::last_write_time(resolved.path, error);
+    const auto modified = std::filesystem::last_write_time(path, error);
     if (error) {
         result.status = HostError(error);
         return result;
@@ -326,11 +324,45 @@ QueryResult FileSystem::Query(std::string_view name, const std::shared_ptr<File>
                                       | std::filesystem::perms::group_write
                                       | std::filesystem::perms::others_write;
     const bool readOnly
-        = resolved.readOnly || (state.permissions() & writePermissions) == std::filesystem::perms::none;
+        = readOnlyMount || (state.permissions() & writePermissions) == std::filesystem::perms::none;
     info.attributes = (directory ? 0x10u : 0u) | (readOnly ? 0x1u : 0u);
     if (!info.attributes)
         info.attributes = 0x80;
 
+    return result;
+}
+
+QueryResult FileSystem::Query(std::string_view name, const std::shared_ptr<File>& root) {
+    std::scoped_lock lock(mutex_);
+    ResolvedPath resolved;
+    const auto status = Resolve(name, root, resolved);
+    if (status != STATUS_SUCCESS)
+        return {status, {}};
+
+    return QueryMetadata(resolved.path, resolved.readOnly);
+}
+
+QueryResult File::Query(bool includeMetadata) {
+    std::scoped_lock lock(ioMutex_);
+    auto result = includeMetadata ? QueryMetadata(path_, readOnly_) : QueryResult{};
+    if (result.status != STATUS_SUCCESS)
+        return result;
+
+    auto& info = result.information;
+    info.position = position_;
+    info.access = access_;
+    info.mode = options_ & 0x103Eu;
+    auto relative = path_.lexically_relative(root_).generic_string();
+    if (relative == ".")
+        relative.clear();
+    std::replace(relative.begin(), relative.end(), '/', '\\');
+    info.name = "\\" + relative;
+    // portable path identity stays stable across opens without leaking a host pointer
+    info.indexNumber = 14695981039346656037ull;
+    for (const auto byte : path_.generic_u8string()) {
+        info.indexNumber ^= static_cast<uint8_t>(byte);
+        info.indexNumber *= 1099511628211ull;
+    }
     return result;
 }
 
@@ -446,6 +478,7 @@ OpenResult FileSystem::Open(const OpenRequest& request) {
     file->synchronous_ = options & 0x30;
     file->access_ = access;
     file->sharing_ = request.shareAccess;
+    file->options_ = options;
 
     // allocate the sharing slot before any host mutation so allocation failure cannot lose an open
     // reservation

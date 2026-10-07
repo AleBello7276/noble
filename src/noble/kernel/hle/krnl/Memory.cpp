@@ -1,5 +1,6 @@
 #include "Memory.h"
 
+#include "Logger.h"
 #include <array>
 #include <bit>
 #include <new>
@@ -191,10 +192,16 @@ uint32_t MmGetPhysicalAddress(Memory& memory, GuestAddress address) {
     return physical == UINT32_MAX ? 0 : physical;
 }
 
+void MmFreePhysicalMemory(Memory& memory, [[maybe_unused]] uint32_t type, GuestAddress baseAddress) {
+    if (!memory.FreePhysical(baseAddress))
+        LOG_ERROR("MmFreePhysicalMemory: unable to release allocation at 0x{:08X}", baseAddress);
+}
+
 constexpr std::array exports{
     Bind<&NtAllocateVirtualMemory>(XboxLibrary::XboxKrnl, "NtAllocateVirtualMemory"),
     Bind<&NtFreeVirtualMemory>(XboxLibrary::XboxKrnl, "NtFreeVirtualMemory"),
     Bind<&MmAllocatePhysicalMemoryEx>(XboxLibrary::XboxKrnl, "MmAllocatePhysicalMemoryEx"),
+    Bind<&MmFreePhysicalMemory>(XboxLibrary::XboxKrnl, "MmFreePhysicalMemory"),
     Bind<&MmGetPhysicalAddress>(XboxLibrary::XboxKrnl, "MmGetPhysicalAddress"),
 };
 

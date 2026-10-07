@@ -47,6 +47,9 @@ public:
     GuestAddress AllocatePhysical(size_t size, size_t alignment, GuestHeapKind kind, uint32_t minimum,
                                   uint32_t maximum, MemoryProtection protection);
 
+    // release a physical allocation using its original guest window address
+    bool FreePhysical(GuestAddress address);
+
     /* allocate guest pages at a specific address */
     bool AllocateFixed(GuestAddress address, size_t size);
 

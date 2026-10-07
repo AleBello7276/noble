@@ -17,6 +17,8 @@ namespace vfs {
 enum class Disposition : uint32_t { Supersede, Open, Create, OpenIf, Overwrite, OverwriteIf };
 enum class Action : uint32_t { Superseded, Opened, Created, Overwritten, Exists, DoesNotExist };
 
+struct QueryResult;
+
 // retain a host file or directory and its mount identity for subsequent relative opens
 // the stream and guest sharing reservation live until the last reference is released
 class File {
@@ -32,6 +34,9 @@ public:
     // serialize reads on this handle and advance the file position by the bytes transferred
     ReadResult Read(std::span<uint8_t> buffer, std::optional<uint64_t> offset = {});
 
+    // query handle state and optionally refresh host metadata without changing the file position
+    QueryResult Query(bool includeMetadata = true);
+
 private:
     friend class FileSystem;
     std::filesystem::path root_, path_;
@@ -43,6 +48,7 @@ private:
     bool readOnly_ = true;
     uint32_t access_ = 0;
     uint32_t sharing_ = 0;
+    uint32_t options_ = 0;
 };
 
 struct OpenRequest {
@@ -74,6 +80,13 @@ struct FileInformation {
     uint64_t allocationSize = 0;
     uint64_t endOfFile = 0;
     uint32_t attributes = 0;
+    uint32_t numberOfLinks = 1;
+    uint64_t position = 0;
+    uint64_t indexNumber = 0;
+    uint32_t access = 0;
+    uint32_t mode = 0;
+    // counted ansi path relative to the guest mount without a host directory prefix
+    std::string name;
 };
 
 struct QueryResult {

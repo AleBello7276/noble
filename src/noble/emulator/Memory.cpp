@@ -194,6 +194,14 @@ GuestAddress Memory::AllocatePhysical(size_t size, size_t alignment, GuestHeapKi
     return guest;
 }
 
+bool Memory::FreePhysical(GuestAddress address) {
+    if (address < HeapFor(GuestHeapKind::Physical64K).begin
+        || address >= HeapFor(GuestHeapKind::Physical4K).end)
+        return false;
+
+    return FreeVirtual(address);
+}
+
 bool Memory::AllocateFixed(GuestAddress address, size_t size) {
     const Heap* heap = HeapAt(address);
 

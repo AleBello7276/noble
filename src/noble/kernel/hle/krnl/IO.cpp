@@ -3,6 +3,8 @@
 #include "kernel/KFile.h"
 #include "kernel/Kernel.h"
 #include <array>
+#include <algorithm>
+#include <cstring>
 
 namespace hle::krnl {
 
@@ -217,6 +219,153 @@ XNTSTATUS NtReadFile(Kernel& kernel, KThread& thread, Memory& memory, uint32_t f
     return status;
 }
 
+XNTSTATUS NtQueryInformationFile(KThread& thread, Memory& memory, uint32_t fileHandle,
+                                 Pointer<IOStatusBlock, PointerValidation::Report> ioStatus,
+                                 GuestAddress information, uint32_t length, uint32_t informationClass) {
+    const auto complete = [&](XNTSTATUS status, uint32_t bytes = 0) {
+        if (ioStatus) {
+            ioStatus->status = status;
+            ioStatus->information = bytes;
+        }
+        return status;
+    };
+    if (ioStatus.guest_address() && !ioStatus)
+        return X_STATUS_ACCESS_VIOLATION;
+
+    const auto query = static_cast<FileInformationClass>(informationClass);
+    uint32_t minimum = 0;
+    switch (query) {
+    case FileInformationClass::Basic:
+        minimum = sizeof(FileBasicInformation);
+        break;
+    case FileInformationClass::Standard:
+        minimum = sizeof(FileStandardInformation);
+        break;
+    case FileInformationClass::Name:
+        minimum = sizeof(FileNameInformation);
+        break;
+    case FileInformationClass::All:
+        minimum = sizeof(FileAllInformation);
+        break;
+    case FileInformationClass::NetworkOpen:
+        minimum = sizeof(FileNetworkOpenInformation);
+        break;
+    case FileInformationClass::Internal:
+    case FileInformationClass::Position:
+    case FileInformationClass::Allocation:
+    case FileInformationClass::EndOfFile:
+    case FileInformationClass::AttributeTag:
+        minimum = 8;
+        break;
+    case FileInformationClass::Ea:
+    case FileInformationClass::Access:
+    case FileInformationClass::Mode:
+    case FileInformationClass::Alignment:
+        minimum = 4;
+        break;
+    default:
+        return complete(informationClass > 0 && informationClass < 37 ? X_STATUS_NOT_SUPPORTED :
+                                                                        X_STATUS_INVALID_INFO_CLASS);
+    }
+    if (length < minimum)
+        return complete(X_STATUS_INFO_LENGTH_MISMATCH);
+    if (!thread.process())
+        return complete(X_STATUS_INVALID_HANDLE);
+    const auto object = thread.process()->handles.Lookup(fileHandle);
+    if (!object || object->type() != KernelObjectType::KFile)
+        return complete(X_STATUS_INVALID_HANDLE);
+    if (!information || !memory.IsAccessible(information, minimum, true))
+        return complete(X_STATUS_ACCESS_VIOLATION);
+
+    try {
+        const auto file = std::static_pointer_cast<KFile>(object)->file();
+        const bool includeMetadata
+            = query == FileInformationClass::Basic || query == FileInformationClass::Standard
+              || query == FileInformationClass::All || query == FileInformationClass::NetworkOpen
+              || query == FileInformationClass::Allocation || query == FileInformationClass::EndOfFile
+              || query == FileInformationClass::AttributeTag;
+        const auto result = file->Query(includeMetadata);
+        if (result.status != STATUS_SUCCESS)
+            return complete(result.status);
+        const auto& info = result.information;
+        const FileBasicInformation basic{info.creationTime, info.lastAccessTime, info.lastWriteTime,
+                                         info.changeTime,   info.attributes,     0};
+        const FileStandardInformation standard{
+            info.allocationSize, info.endOfFile, info.numberOfLinks, 0, uint8_t(file->IsDirectory()), {}};
+
+        const auto publish = [&]<typename T>(const T& value) {
+            auto* output = memory.Translate(information, sizeof(T));
+            if (!output)
+                return complete(X_STATUS_ACCESS_VIOLATION);
+            std::memcpy(output, &value, sizeof(T));
+            return complete(STATUS_SUCCESS, sizeof(T));
+        };
+
+        // retain the full name length even when only a prefix fits in the caller's buffer
+        const auto publishName = [&](const auto& header, uint32_t nameOffset) {
+            const uint32_t count
+                = static_cast<uint32_t>((std::min)(size_t(length - nameOffset), info.name.size()));
+            const uint32_t bytes = nameOffset + count;
+            if (!memory.IsAccessible(information, bytes, true))
+                return complete(X_STATUS_ACCESS_VIOLATION);
+            auto* output = static_cast<uint8_t*>(memory.Translate(information, bytes));
+            if (!output)
+                return complete(X_STATUS_ACCESS_VIOLATION);
+            std::memcpy(output, &header, nameOffset);
+            std::memcpy(output + nameOffset, info.name.data(), count);
+            return complete(count == info.name.size() ? STATUS_SUCCESS : X_STATUS_BUFFER_OVERFLOW, bytes);
+        };
+
+        switch (query) {
+        case FileInformationClass::Basic:
+            return publish(basic);
+        case FileInformationClass::Standard:
+            return publish(standard);
+        case FileInformationClass::Internal:
+            return publish(be<uint64_t>(info.indexNumber));
+        case FileInformationClass::Ea:
+            return publish(be<uint32_t>(0));
+        case FileInformationClass::Access:
+            return publish(be<uint32_t>(info.access));
+        case FileInformationClass::Position:
+            return publish(be<uint64_t>(info.position));
+        case FileInformationClass::Mode:
+            return publish(be<uint32_t>(info.mode));
+        case FileInformationClass::Alignment:
+            return publish(be<uint32_t>(0));
+        case FileInformationClass::Allocation:
+            return publish(be<uint64_t>(info.allocationSize));
+        case FileInformationClass::EndOfFile:
+            return publish(be<uint64_t>(info.endOfFile));
+        case FileInformationClass::Name: {
+            const FileNameInformation name{uint32_t(info.name.size()), {}, {}};
+            return publishName(name, offsetof(FileNameInformation, fileName));
+        }
+        case FileInformationClass::All: {
+            const FileAllInformation all{basic,     standard,    info.indexNumber,
+                                         0,         info.access, info.position,
+                                         info.mode, 0,           {uint32_t(info.name.size()), {}, {}}};
+            return publishName(all,
+                               offsetof(FileAllInformation, name) + offsetof(FileNameInformation, fileName));
+        }
+        case FileInformationClass::NetworkOpen:
+            return publish(FileNetworkOpenInformation{
+                info.creationTime, info.lastAccessTime, info.lastWriteTime, info.changeTime,
+                info.allocationSize, info.endOfFile, info.attributes, 0});
+        case FileInformationClass::AttributeTag: {
+            const std::array value{be<uint32_t>(info.attributes), be<uint32_t>(0)};
+            return publish(value);
+        }
+        default:
+            return complete(X_STATUS_INVALID_INFO_CLASS);
+        }
+    } catch (const std::bad_alloc&) {
+        return complete(X_STATUS_INSUFFICIENT_RESOURCES);
+    } catch (const std::filesystem::filesystem_error&) {
+        return complete(X_STATUS_IO_ERROR);
+    }
+}
+
 XNTSTATUS NtClose(KThread& thread, uint32_t handle) {
     return thread.process() && thread.process()->handles.Remove(handle) ? STATUS_SUCCESS :
                                                                           X_STATUS_INVALID_HANDLE;
@@ -226,6 +375,7 @@ constexpr std::array exports{
     Bind<&NtCreateFile>(XboxLibrary::XboxKrnl, "NtCreateFile"),
     Bind<&NtReadFile>(XboxLibrary::XboxKrnl, "NtReadFile"),
     Bind<&NtQueryFullAttributesFile>(XboxLibrary::XboxKrnl, "NtQueryFullAttributesFile"),
+    Bind<&NtQueryInformationFile>(XboxLibrary::XboxKrnl, "NtQueryInformationFile"),
     Bind<&NtClose>(XboxLibrary::XboxKrnl, "NtClose"),
 };
 
