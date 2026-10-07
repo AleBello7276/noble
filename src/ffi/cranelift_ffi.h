@@ -354,6 +354,10 @@ ClValue cl_ins_fdiv(ClFunctionBuilder* builder, ClValue left, ClValue right);
 ClValue cl_ins_bitcast(ClFunctionBuilder* builder, ClType type, ClMemFlags flags, ClValue value);
 // replicate a scalar into every lane of the requested vector type whose lane type must match value
 ClValue cl_ins_splat(ClFunctionBuilder* builder, ClType type, ClValue value);
+// return an i8 boolean that is true when every vector lane is nonzero
+ClValue cl_ins_vall_true(ClFunctionBuilder* builder, ClValue vector);
+// return an i8 boolean that is true when any vector lane is nonzero
+ClValue cl_ins_vany_true(ClFunctionBuilder* builder, ClValue vector);
 // extract a scalar lane using a constant index less than the vector lane count
 ClValue cl_ins_extractlane(ClFunctionBuilder* builder, ClValue vector, uint8_t lane);
 // replace a lane using a matching scalar value and a constant index less than the vector lane count

@@ -359,3 +359,32 @@ CLHandler(mfcr) {
 
     e_.store_gpr(rd, result);
 }
+
+inline void store_cr_field(EmitterContext& e_, uint32_t field, Value value) {
+    const uint32_t shift = (7 - field) * 4;
+
+    Value nibble = shift ? e_.ins().ushr_imm_u(value, shift) : value;
+    nibble = e_.ins().ireduce(types::I8(), nibble);
+
+    const auto flags = e_.builder.memflags_new();
+
+    e_.builder.ins().store(flags, e_.ins().band_imm_u(e_.ins().ushr_imm_u(nibble, 3), 1), e_.vCpuState,
+                           CRFieldBitOffset(field, 0));
+    e_.builder.ins().store(flags, e_.ins().band_imm_u(e_.ins().ushr_imm_u(nibble, 2), 1), e_.vCpuState,
+                           CRFieldBitOffset(field, 1));
+    e_.builder.ins().store(flags, e_.ins().band_imm_u(e_.ins().ushr_imm_u(nibble, 1), 1), e_.vCpuState,
+                           CRFieldBitOffset(field, 2));
+    e_.builder.ins().store(flags, e_.ins().band_imm_u(nibble, 1), e_.vCpuState, CRFieldBitOffset(field, 3));
+}
+
+CLHandler(mtcrf) {
+    const auto rs = info_.mInst.field_rs();
+    const auto crm = info_.mInst.field_crm();
+
+    const Value value = e_.load_gpr(rs);
+
+    for (uint32_t b = 0; b < 8; ++b) {
+        if (crm & (1 << b))
+            store_cr_field(e_, 7 - b, value);
+    }
+}

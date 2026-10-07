@@ -114,6 +114,7 @@ inline constexpr auto emitter_dispatch_table = [] {
 
     table[to_underlying(PpcOpcode::Dcbt)] = &cl_dcbt_handler;
     table[to_underlying(PpcOpcode::Dcbtst)] = &cl_dcbtst_handler;
+    table[to_underlying(PpcOpcode::Mtcrf)] = &cl_mtcrf_handler;
 
     // byte load/store
     table[to_underlying(PpcOpcode::Lbz)] = &cl_lbz_handler;
@@ -213,30 +214,66 @@ inline constexpr auto emitter_dispatch_table = [] {
     table[to_underlying(PpcOpcode::Stvlx128)] = &cl_stvlx128_handler;
     table[to_underlying(PpcOpcode::Stvlxl128)] = &cl_stvlxl128_handler;
 
+    table[to_underlying(PpcOpcode::Lvlx)] = &cl_lvlx_handler;
+    table[to_underlying(PpcOpcode::Lvlxl)] = &cl_lvlxl_handler;
+    table[to_underlying(PpcOpcode::Lvlx128)] = &cl_lvlx128_handler;
+    table[to_underlying(PpcOpcode::Lvlxl128)] = &cl_lvlxl128_handler;
+
     table[to_underlying(PpcOpcode::Stvrx)] = &cl_stvrx_handler;
     table[to_underlying(PpcOpcode::Stvrxl)] = &cl_stvrxl_handler;
     table[to_underlying(PpcOpcode::Stvrx128)] = &cl_stvrx128_handler;
     table[to_underlying(PpcOpcode::Stvrxl128)] = &cl_stvrxl128_handler;
 
+    table[to_underlying(PpcOpcode::Lvrx)] = &cl_lvrx_handler;
+    table[to_underlying(PpcOpcode::Lvrxl)] = &cl_lvrxl_handler;
+    table[to_underlying(PpcOpcode::Lvrx128)] = &cl_lvrx128_handler;
+    table[to_underlying(PpcOpcode::Lvrxl128)] = &cl_lvrxl128_handler;
+
     table[to_underlying(PpcOpcode::Vspltisw)] = &cl_vspltisw_handler;
     table[to_underlying(PpcOpcode::Vspltisw128)] = &cl_vspltisw128_handler;
     table[to_underlying(PpcOpcode::Vupkd3d128)] = &cl_vupkd3d128_handler;
-
     table[to_underlying(PpcOpcode::Vpermwi128)] = &cl_vpermwi128_handler;
-
     table[to_underlying(PpcOpcode::Vsubfp)] = &cl_vsubfp_handler;
     table[to_underlying(PpcOpcode::Vsubfp128)] = &cl_vsubfp128_handler;
-
     table[to_underlying(PpcOpcode::Vor)] = &cl_vor_handler;
     table[to_underlying(PpcOpcode::Vor128)] = &cl_vor128_handler;
-
     table[to_underlying(PpcOpcode::Vrlimi128)] = &cl_vrlimi128_handler;
-
     table[to_underlying(PpcOpcode::Lvsl)] = &cl_lvsl_handler;
     table[to_underlying(PpcOpcode::Lvsl128)] = &cl_lvsl128_handler;
-
     table[to_underlying(PpcOpcode::Vperm)] = &cl_vperm_handler;
     table[to_underlying(PpcOpcode::Vperm128)] = &cl_vperm128_handler;
+    table[to_underlying(PpcOpcode::Vmsum3fp128)] = &cl_vmsum3fp128_handler;
+    table[to_underlying(PpcOpcode::Vcfsx)] = &cl_vcfsx_handler;
+    table[to_underlying(PpcOpcode::Vcfsx128)] = &cl_vcfsx128_handler;
+    table[to_underlying(PpcOpcode::Vslw)] = &cl_vslw_handler;
+    table[to_underlying(PpcOpcode::Vslw128)] = &cl_vslw128_handler;
+    table[to_underlying(PpcOpcode::Vxor)] = &cl_vxor_handler;
+    table[to_underlying(PpcOpcode::Vxor128)] = &cl_vxor128_handler;
+    table[to_underlying(PpcOpcode::Vrsqrtefp)] = &cl_vrsqrtefp_handler;
+    table[to_underlying(PpcOpcode::Vrsqrtefp128)] = &cl_vrsqrtefp128_handler;
+    table[to_underlying(PpcOpcode::Vmulfp128)] = &cl_vmulfp128_handler;
+    table[to_underlying(PpcOpcode::Vnmsubfp)] = &cl_vnmsubfp_handler;
+    table[to_underlying(PpcOpcode::Vnmsubfp128)] = &cl_vnmsubfp128_handler;
+    table[to_underlying(PpcOpcode::Vmaddfp)] = &cl_vmaddfp_handler;
+    table[to_underlying(PpcOpcode::Vmaddfp128)] = &cl_vmaddfp128_handler;
+    table[to_underlying(PpcOpcode::Vmaddcfp128)] = &cl_vmaddcfp128_handler;
+    table[to_underlying(PpcOpcode::Vmrghw)] = &cl_vmrghw_handler;
+    table[to_underlying(PpcOpcode::Vmrghw128)] = &cl_vmrghw128_handler;
+    table[to_underlying(PpcOpcode::Vmrglw)] = &cl_vmrglw_handler;
+    table[to_underlying(PpcOpcode::Vmrglw128)] = &cl_vmrglw128_handler;
+    table[to_underlying(PpcOpcode::Vspltw)] = &cl_vspltw_handler;
+    table[to_underlying(PpcOpcode::Vspltw128)] = &cl_vspltw128_handler;
+    table[to_underlying(PpcOpcode::Vmsum4fp128)] = &cl_vmsum4fp128_handler;
+    table[to_underlying(PpcOpcode::Vsldoi)] = &cl_vsldoi_handler;
+    table[to_underlying(PpcOpcode::Vsldoi128)] = &cl_vsldoi128_handler;
+    table[to_underlying(PpcOpcode::Vrefp)] = &cl_vrefp_handler;
+    table[to_underlying(PpcOpcode::Vrefp128)] = &cl_vrefp128_handler;
+    table[to_underlying(PpcOpcode::Vcmpeqfp)] = &cl_vcmpeqfp_handler;
+    table[to_underlying(PpcOpcode::Vcmpeqfp128)] = &cl_vcmpeqfp128_handler;
+    table[to_underlying(PpcOpcode::Vsel)] = &cl_vsel_handler;
+    table[to_underlying(PpcOpcode::Vsel128)] = &cl_vsel128_handler;
+    table[to_underlying(PpcOpcode::Stvewx)] = &cl_stvewx_handler;
+    table[to_underlying(PpcOpcode::Stvewx128)] = &cl_stvewx128_handler;
 
     return table;
 }();

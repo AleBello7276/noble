@@ -275,7 +275,7 @@ CLHandler(fneg) {
 }
 
 CLHandler(fcmpu) {
-    const auto bf = info_.mInst.field_frb();
+    const auto bf = info_.mInst.field_crfd();
     const auto fra = info_.mInst.field_fra();
     const auto frb = info_.mInst.field_frb();
 
@@ -299,7 +299,7 @@ CLHandler(fcmpu) {
 }
 
 CLHandler(fcmpo) {
-    const auto bf = info_.mInst.field_frb();
+    const auto bf = info_.mInst.field_crfd();
     const auto fra = info_.mInst.field_fra();
     const auto frb = info_.mInst.field_frb();
 

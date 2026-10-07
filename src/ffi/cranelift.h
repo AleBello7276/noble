@@ -981,6 +981,16 @@ public:
         return Value{cl_ins_splat(builder_, type, value.raw())};
     }
 
+    // return an i8 boolean that is true when every vector lane is nonzero
+    Value vall_true(Value vector) const noexcept {
+        return Value{cl_ins_vall_true(builder_, vector.raw())};
+    }
+
+    // return an i8 boolean that is true when any vector lane is nonzero
+    Value vany_true(Value vector) const noexcept {
+        return Value{cl_ins_vany_true(builder_, vector.raw())};
+    }
+
     // extract a scalar lane using a constant index less than the vector lane count
     Value extractlane(Value vector, std::uint8_t lane) const noexcept {
         return Value{cl_ins_extractlane(builder_, vector.raw(), lane)};

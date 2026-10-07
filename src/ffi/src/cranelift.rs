@@ -798,6 +798,10 @@ typed_unary_ins!(cl_ins_ireduce, ireduce);
 typed_unary_ins!(cl_ins_uextend, uextend);
 typed_unary_ins!(cl_ins_sextend, sextend);
 typed_unary_ins!(cl_ins_splat, splat);
+// return an i8 boolean that is true when every vector lane is nonzero
+unary_ins!(cl_ins_vall_true, vall_true);
+// return an i8 boolean that is true when any vector lane is nonzero
+unary_ins!(cl_ins_vany_true, vany_true);
 binary_ins!(cl_ins_swizzle, swizzle);
 
 #[no_mangle]

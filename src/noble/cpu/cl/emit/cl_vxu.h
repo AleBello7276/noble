@@ -419,6 +419,41 @@ CLHandler(stvlxl128) {
     emit_stvlx(e_, info_.mInst.field_vds128(), info_.mInst.field_ra(), info_.mInst.field_rb());
 }
 
+inline void emit_lvlx(EmitterContext& e_, uint32_t vd, uint32_t ra, uint32_t rb) {
+    const Value base = ra ? e_.load_gpr(ra) : e_.i64(0);
+    const Value ea = e_.ins().iadd(base, e_.load_gpr(rb));
+
+    const Value aligned = e_.ins().band_imm_u(ea, ~0xFULL);
+    const Value eb = e_.ins().ireduce(types::I8(), e_.ins().band_imm_u(ea, 0xF));
+
+    const Value source = e_.byteswap_v128(e_.load_memory(aligned, types::I8X16()));
+
+    static constexpr std::array<uint8_t, 16> bytes = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+
+    const Value indices = e_.ins().vconst(types::I8X16(), bytes);
+    const Value offset = e_.ins().splat(types::I8X16(), eb);
+
+    const Value result = e_.ins().swizzle(source, e_.ins().isub(indices, offset));
+
+    e_.store_vr(vd, result);
+}
+
+CLHandler(lvlx) {
+    emit_lvlx(e_, info_.mInst.field_vd(), info_.mInst.field_ra(), info_.mInst.field_rb());
+}
+
+CLHandler(lvlxl) {
+    emit_lvlx(e_, info_.mInst.field_vd(), info_.mInst.field_ra(), info_.mInst.field_rb());
+}
+
+CLHandler(lvlx128) {
+    emit_lvlx(e_, info_.mInst.field_vds128(), info_.mInst.field_ra(), info_.mInst.field_rb());
+}
+
+CLHandler(lvlxl128) {
+    emit_lvlx(e_, info_.mInst.field_vds128(), info_.mInst.field_ra(), info_.mInst.field_rb());
+}
+
 inline void emit_stvrx(EmitterContext& e_, uint32_t vs, uint32_t ra, uint32_t rb) {
     const Value base = ra ? e_.load_gpr(ra) : e_.i64(0);
     const Value ea = e_.ins().iadd(base, e_.load_gpr(rb));
@@ -465,4 +500,463 @@ CLHandler(stvrx128) {
 
 CLHandler(stvrxl128) {
     emit_stvrx(e_, info_.mInst.field_vds128(), info_.mInst.field_ra(), info_.mInst.field_rb());
+}
+
+inline void emit_lvrx(EmitterContext& e_, uint32_t vd, uint32_t ra, uint32_t rb) {
+    const Value base = ra ? e_.load_gpr(ra) : e_.i64(0);
+    const Value ea = e_.ins().iadd(base, e_.load_gpr(rb));
+    const Value eb = e_.ins().ireduce(types::I8(), e_.ins().band_imm_u(ea, 0xF));
+
+    const Value zero = e_.ins().splat(types::I8X16(), e_.i8(0));
+    e_.store_vr(vd, zero);
+
+    const auto load_block = e_.builder.create_block();
+    const auto done_block = e_.builder.create_block();
+
+    const Value is_zero = e_.ins().icmp_imm_u(IntCC::CL_INTCC_EQUAL, eb, 0);
+
+    e_.Branch(is_zero, done_block, {}, load_block, {});
+    e_.SwitchToBlock(load_block);
+
+    const Value aligned = e_.ins().band_imm_u(ea, ~0xFULL);
+    const Value source = e_.byteswap_v128(e_.load_memory(aligned, types::I8X16()));
+
+    static constexpr std::array<uint8_t, 16> bytes = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+
+    const Value indices = e_.ins().vconst(types::I8X16(), bytes);
+    const Value offset = e_.ins().splat(types::I8X16(), e_.ins().isub(e_.i8(16), eb));
+
+    const Value result = e_.ins().swizzle(source, e_.ins().iadd(indices, offset));
+
+    e_.store_vr(vd, result);
+    e_.Jump(done_block);
+
+    e_.SwitchToBlock(done_block);
+}
+
+CLHandler(lvrx) {
+    emit_lvrx(e_, info_.mInst.field_vd(), info_.mInst.field_ra(), info_.mInst.field_rb());
+}
+
+CLHandler(lvrxl) {
+    emit_lvrx(e_, info_.mInst.field_vd(), info_.mInst.field_ra(), info_.mInst.field_rb());
+}
+
+CLHandler(lvrx128) {
+    emit_lvrx(e_, info_.mInst.field_vds128(), info_.mInst.field_ra(), info_.mInst.field_rb());
+}
+
+CLHandler(lvrxl128) {
+    emit_lvrx(e_, info_.mInst.field_vds128(), info_.mInst.field_ra(), info_.mInst.field_rb());
+}
+
+inline Value flush_denormal_f32(EmitterContext& e_, Value value) {
+    const Value bits = e_.ins().bitcast(types::I32(), MemFlags{}, value);
+    const Value exponent = e_.ins().band_imm_u(bits, 0x7F800000);
+    const Value is_denormal = e_.ins().icmp_imm_u(IntCC::CL_INTCC_EQUAL, exponent, 0);
+
+    return e_.ins().select(is_denormal, e_.f32(0.0f), value);
+}
+
+// TODO: re visit this
+CLHandler(vmsum3fp128) {
+    const auto vd = info_.mInst.field_vds128();
+    const auto va = info_.mInst.field_va128();
+    const auto vb = info_.mInst.field_vb128();
+
+    const Value a = e_.load_vr(va, types::F32X4());
+    const Value b = e_.load_vr(vb, types::F32X4());
+    const Value mul = e_.ins().fmul(a, b);
+
+    const Value x = e_.ins().extractlane(mul, 3);
+    const Value y = e_.ins().extractlane(mul, 2);
+    const Value z = e_.ins().extractlane(mul, 1);
+
+    Value dot = e_.ins().fadd(e_.ins().fadd(x, y), z);
+    dot = flush_denormal_f32(e_, dot);
+
+    e_.store_vr(vd, e_.ins().splat(types::F32X4(), dot));
+}
+
+CLHandler(vmsum4fp128) {
+    const auto vd = info_.mInst.field_vds128();
+    const auto va = info_.mInst.field_va128();
+    const auto vb = info_.mInst.field_vb128();
+
+    const Value a = e_.load_vr(va, types::F32X4());
+    const Value b = e_.load_vr(vb, types::F32X4());
+    const Value mul = e_.ins().fmul(a, b);
+
+    const Value x = e_.ins().extractlane(mul, 3);
+    const Value y = e_.ins().extractlane(mul, 2);
+    const Value z = e_.ins().extractlane(mul, 1);
+    const Value w = e_.ins().extractlane(mul, 0);
+
+    const Value xy = e_.ins().fadd(x, y);
+    const Value zw = e_.ins().fadd(z, w);
+    const Value dot = e_.ins().fadd(xy, zw);
+
+    e_.store_vr(vd, e_.ins().splat(types::F32X4(), dot));
+}
+
+inline void emit_vcfsx(EmitterContext& e_, uint32_t vd, uint32_t vb, uint32_t uimm) {
+    const Value source = e_.load_vr(vb, types::I32X4());
+    Value result = e_.ins().fcvt_from_sint(types::F32X4(), source);
+
+    if (uimm) {
+        const float scale = std::ldexp(1.0f, -static_cast<int>(uimm));
+        const Value factor = e_.ins().splat(types::F32X4(), e_.f32(scale));
+        result = e_.ins().fmul(result, factor);
+    }
+
+    e_.store_vr(vd, result);
+}
+
+CLHandler(vcfsx) {
+    emit_vcfsx(e_, info_.mInst.field_vd(), info_.mInst.field_vb(), info_.mInst.field_va());
+}
+
+CLHandler(vcfsx128) {
+    emit_vcfsx(e_, info_.mInst.field_vds128(), info_.mInst.field_vb128(), info_.mInst.field_vsimm());
+}
+
+inline void emit_vslw(EmitterContext& e_, uint32_t vd, uint32_t va, uint32_t vb) {
+    const Value a = e_.load_vr(va, types::I32X4());
+    const Value b = e_.load_vr(vb, types::I32X4());
+
+    // each word has its own shift count, while clir vector shifts take one scalar count
+    Value result = a;
+    for (uint8_t lane = 0; lane < 4; ++lane) {
+        const Value word = e_.ins().extractlane(a, lane);
+        const Value count = e_.ins().band_imm_u(e_.ins().extractlane(b, lane), 31);
+        result = e_.ins().insertlane(result, e_.ins().ishl(word, count), lane);
+    }
+
+    e_.store_vr(vd, result);
+}
+
+CLHandler(vslw) {
+    emit_vslw(e_, info_.mInst.field_vd(), info_.mInst.field_va(), info_.mInst.field_vb());
+}
+
+CLHandler(vslw128) {
+    emit_vslw(e_, info_.mInst.field_vds128(), info_.mInst.field_va128(), info_.mInst.field_vb128());
+}
+
+inline void emit_vxor(EmitterContext& e_, uint32_t vd, uint32_t va, uint32_t vb) {
+    Value result;
+
+    if (va == vb) {
+        result = e_.ins().splat(types::I8X16(), e_.i8(0));
+    } else {
+        result = e_.ins().bxor(e_.load_vr(va, types::I8X16()), e_.load_vr(vb, types::I8X16()));
+    }
+
+    e_.store_vr(vd, result);
+}
+
+CLHandler(vxor) {
+    emit_vxor(e_, info_.mInst.field_vd(), info_.mInst.field_va(), info_.mInst.field_vb());
+}
+
+CLHandler(vxor128) {
+    emit_vxor(e_, info_.mInst.field_vds128(), info_.mInst.field_va128(), info_.mInst.field_vb128());
+}
+
+inline void emit_vrsqrtefp(EmitterContext& e_, uint32_t vd, uint32_t vb) {
+    const Value source = e_.load_vr(vb, types::F32X4());
+    const Value one = e_.ins().splat(types::F32X4(), e_.f32(1.0f));
+
+    const Value result = e_.ins().fdiv(one, e_.ins().sqrt(source));
+
+    e_.store_vr(vd, result);
+}
+
+CLHandler(vrsqrtefp) {
+    emit_vrsqrtefp(e_, info_.mInst.field_vd(), info_.mInst.field_vb());
+}
+
+CLHandler(vrsqrtefp128) {
+    emit_vrsqrtefp(e_, info_.mInst.field_vds128(), info_.mInst.field_vb128());
+}
+
+CLHandler(vmulfp128) {
+    const auto vd = info_.mInst.field_vds128();
+    const auto va = info_.mInst.field_va128();
+    const auto vb = info_.mInst.field_vb128();
+
+    const Value result = e_.ins().fmul(e_.load_vr(va, types::F32X4()), e_.load_vr(vb, types::F32X4()));
+
+    e_.store_vr(vd, result);
+}
+
+inline void emit_vnmsubfp(EmitterContext& e_, uint32_t vd, uint32_t va, uint32_t vb, uint32_t vc) {
+    const Value a = e_.load_vr(va, types::F32X4());
+    const Value b = e_.load_vr(vb, types::F32X4());
+    const Value c = e_.load_vr(vc, types::F32X4());
+
+    const Value result = e_.ins().fneg(e_.ins().fma(a, c, e_.ins().fneg(b)));
+
+    e_.store_vr(vd, result);
+}
+
+CLHandler(vnmsubfp) {
+    emit_vnmsubfp(e_, info_.mInst.field_vd(), info_.mInst.field_va(), info_.mInst.field_vb(),
+                  info_.mInst.field_vc());
+}
+
+CLHandler(vnmsubfp128) {
+    emit_vnmsubfp(e_, info_.mInst.field_vds128(), info_.mInst.field_va128(), info_.mInst.field_vds128(),
+                  info_.mInst.field_vb128());
+}
+
+inline Value flush_denormal_f32x4(EmitterContext& e_, Value value) {
+    const Value bits = e_.ins().bitcast(types::I32X4(), MemFlags{}, value);
+
+    const Value exponent_mask = e_.ins().splat(types::I32X4(), e_.i32(0x7F800000));
+    const Value sign_mask = e_.ins().splat(types::I32X4(), e_.i32(0x80000000));
+
+    const Value exponent = e_.ins().band(bits, exponent_mask);
+    const Value zero = e_.ins().splat(types::I32X4(), e_.i32(0));
+    const Value is_denormal = e_.ins().icmp(IntCC::CL_INTCC_EQUAL, exponent, zero);
+
+    const Value signed_zero = e_.ins().band(bits, sign_mask);
+    const Value result = e_.ins().bitselect(is_denormal, signed_zero, bits);
+
+    return e_.ins().bitcast(types::F32X4(), MemFlags{}, result);
+}
+
+inline void emit_vmaddfp(EmitterContext& e_, uint32_t vd, uint32_t va, uint32_t vb, uint32_t vc) {
+    const Value a = flush_denormal_f32x4(e_, e_.load_vr(va, types::F32X4()));
+    const Value b = flush_denormal_f32x4(e_, e_.load_vr(vb, types::F32X4()));
+    const Value c = flush_denormal_f32x4(e_, e_.load_vr(vc, types::F32X4()));
+
+    e_.store_vr(vd, e_.ins().fma(a, c, b));
+}
+
+CLHandler(vmaddfp) {
+    emit_vmaddfp(e_, info_.mInst.field_vd(), info_.mInst.field_va(), info_.mInst.field_vb(),
+                 info_.mInst.field_vc());
+}
+
+CLHandler(vmaddfp128) {
+    emit_vmaddfp(e_, info_.mInst.field_vds128(), info_.mInst.field_va128(), info_.mInst.field_vds128(),
+                 info_.mInst.field_vb128());
+}
+
+CLHandler(vmaddcfp128) {
+    const auto vd = info_.mInst.field_vds128();
+    const auto va = info_.mInst.field_va128();
+    const auto vb = info_.mInst.field_vb128();
+
+    emit_vmaddfp(e_, vd, va, vb, vd);
+}
+
+inline void emit_vmrghw(EmitterContext& e_, uint32_t vd, uint32_t va, uint32_t vb) {
+    static constexpr std::array<uint8_t, 16> mask = {
+        24, 25, 26, 27,  // VB.y
+        8,  9,  10, 11,  // VA.y
+        28, 29, 30, 31,  // VB.x
+        12, 13, 14, 15   // VA.x
+    };
+
+    const Value a = e_.load_vr(va, types::I8X16());
+    const Value b = e_.load_vr(vb, types::I8X16());
+
+    e_.store_vr(vd, e_.ins().shuffle(a, b, mask));
+}
+
+CLHandler(vmrghw) {
+    emit_vmrghw(e_, info_.mInst.field_vd(), info_.mInst.field_va(), info_.mInst.field_vb());
+}
+
+CLHandler(vmrghw128) {
+    emit_vmrghw(e_, info_.mInst.field_vds128(), info_.mInst.field_va128(), info_.mInst.field_vb128());
+}
+
+inline void emit_vmrglw(EmitterContext& e_, uint32_t vd, uint32_t va, uint32_t vb) {
+    static constexpr std::array<uint8_t, 16> mask = {
+        16, 17, 18, 19,  // VB.w
+        0,  1,  2,  3,   // VA.w
+        20, 21, 22, 23,  // VB.z
+        4,  5,  6,  7    // VA.z
+    };
+
+    const Value a = e_.load_vr(va, types::I8X16());
+    const Value b = e_.load_vr(vb, types::I8X16());
+
+    e_.store_vr(vd, e_.ins().shuffle(a, b, mask));
+}
+
+CLHandler(vmrglw) {
+    emit_vmrglw(e_, info_.mInst.field_vd(), info_.mInst.field_va(), info_.mInst.field_vb());
+}
+
+CLHandler(vmrglw128) {
+    emit_vmrglw(e_, info_.mInst.field_vds128(), info_.mInst.field_va128(), info_.mInst.field_vb128());
+}
+
+inline void emit_vspltw(EmitterContext& e_, uint32_t vd, uint32_t vb, uint32_t uimm) {
+    const Value source = e_.load_vr(vb, types::I32X4());
+    const uint32_t lane = (uimm & 3) ^ 3;
+
+    const Value word = e_.ins().extractlane(source, lane);
+    const Value result = e_.ins().splat(types::I32X4(), word);
+
+    e_.store_vr(vd, result);
+}
+
+CLHandler(vspltw) {
+    emit_vspltw(e_, info_.mInst.field_vd(), info_.mInst.field_vb(), info_.mInst.field_va());
+}
+
+CLHandler(vspltw128) {
+    emit_vspltw(e_, info_.mInst.field_vds128(), info_.mInst.field_vb128(), info_.mInst.field_vuimm());
+}
+
+inline void emit_vsldoi(EmitterContext& e_, uint32_t vd, uint32_t va, uint32_t vb, uint32_t sh) {
+    sh &= 0xF;
+
+    if (!sh) {
+        if (vd != va)
+            e_.store_vr(vd, e_.load_vr(va, types::I8X16()));
+        return;
+    }
+
+    std::array<uint8_t, 16> mask{};
+
+    for (uint32_t i = 0; i < 16; ++i)
+        mask[i] = static_cast<uint8_t>(i < sh ? 32 + i - sh : i - sh);
+
+    const Value a = e_.load_vr(va, types::I8X16());
+    const Value b = e_.load_vr(vb, types::I8X16());
+
+    e_.store_vr(vd, e_.ins().shuffle(a, b, mask));
+}
+
+CLHandler(vsldoi) {
+    emit_vsldoi(e_, info_.mInst.field_vd(), info_.mInst.field_va(), info_.mInst.field_vb(),
+                info_.mInst.field_vc() & 0xF);
+}
+
+CLHandler(vsldoi128) {
+    emit_vsldoi(e_, info_.mInst.field_vds128(), info_.mInst.field_va128(), info_.mInst.field_vb128(),
+                info_.mInst.field_sh());
+}
+
+inline void emit_vrefp(EmitterContext& e_, uint32_t vd, uint32_t vb) {
+    const Value source = e_.load_vr(vb, types::F32X4());
+    const Value one = e_.ins().splat(types::F32X4(), e_.f32(1.0f));
+
+    e_.store_vr(vd, e_.ins().fdiv(one, source));
+}
+
+CLHandler(vrefp) {
+    emit_vrefp(e_, info_.mInst.field_vd(), info_.mInst.field_vb());
+}
+
+CLHandler(vrefp128) {
+    emit_vrefp(e_, info_.mInst.field_vds128(), info_.mInst.field_vb128());
+}
+
+enum class vcmpxxfp_op {
+    eq,
+    gt,
+    ge,
+};
+
+inline void emit_vcmpxxfp(EmitterContext& e_, vcmpxxfp_op op, uint32_t vd, uint32_t va, uint32_t vb,
+                          uint32_t rc) {
+    const Value a = e_.load_vr(va, types::F32X4());
+    const Value b = e_.load_vr(vb, types::F32X4());
+
+    FloatCC cc;
+    switch (op) {
+    case vcmpxxfp_op::eq:
+        cc = FloatCC::CL_FLOATCC_EQUAL;
+        break;
+    case vcmpxxfp_op::gt:
+        cc = FloatCC::CL_FLOATCC_GREATER_THAN;
+        break;
+    case vcmpxxfp_op::ge:
+        cc = FloatCC::CL_FLOATCC_GREATER_THAN_OR_EQUAL;
+        break;
+    }
+
+    const Value result = e_.ins().fcmp(cc, a, b);
+
+    if (rc) {
+        const Value all = e_.ins().vall_true(result);
+        const Value any = e_.ins().vany_true(result);
+        const Value none = e_.ins().icmp_imm_u(IntCC::CL_INTCC_EQUAL, any, 0);
+
+        const auto flags = e_.builder.memflags_new();
+
+        e_.builder.ins().store(flags, all, e_.vCpuState, CRFieldBitOffset(6, 0));
+        e_.builder.ins().store(flags, e_.i8(0), e_.vCpuState, CRFieldBitOffset(6, 1));
+        e_.builder.ins().store(flags, none, e_.vCpuState, CRFieldBitOffset(6, 2));
+        e_.builder.ins().store(flags, e_.i8(0), e_.vCpuState, CRFieldBitOffset(6, 3));
+    }
+
+    e_.store_vr(vd, result);
+}
+
+CLHandler(vcmpeqfp) {
+    emit_vcmpxxfp(e_, vcmpxxfp_op::eq, info_.mInst.field_vd(), info_.mInst.field_va(), info_.mInst.field_vb(),
+                  info_.mInst.field_rc());
+}
+
+CLHandler(vcmpeqfp128) {
+    emit_vcmpxxfp(e_, vcmpxxfp_op::eq, info_.mInst.field_vds128(), info_.mInst.field_va128(),
+                  info_.mInst.field_vb128(), info_.mInst.field_rc());
+}
+
+inline void emit_vsel(EmitterContext& e_, uint32_t vd, uint32_t va, uint32_t vb, uint32_t vc) {
+    const Value a = e_.load_vr(va, types::I8X16());
+    const Value b = e_.load_vr(vb, types::I8X16());
+    const Value c = e_.load_vr(vc, types::I8X16());
+
+    e_.store_vr(vd, e_.ins().bitselect(c, b, a));
+}
+
+CLHandler(vsel) {
+    emit_vsel(e_, info_.mInst.field_vd(), info_.mInst.field_va(), info_.mInst.field_vb(),
+              info_.mInst.field_vc());
+}
+
+CLHandler(vsel128) {
+    const auto vd = info_.mInst.field_vds128();
+
+    emit_vsel(e_, vd, info_.mInst.field_va128(), info_.mInst.field_vb128(), vd);
+}
+
+inline void emit_stvewx(EmitterContext& e_, uint32_t vs, uint32_t ra, uint32_t rb) {
+    const Value base = ra ? e_.load_gpr(ra) : e_.i64(0);
+    const Value ea = e_.ins().band_imm_u(e_.ins().iadd(base, e_.load_gpr(rb)), ~0x3ULL);
+
+    const Value offset = e_.ins().ireduce(types::I8(), e_.ins().band_imm_u(ea, 0xC));
+    const Value index = e_.ins().isub(e_.i8(12), offset);
+
+    static constexpr std::array<uint8_t, 16> bytes = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+
+    const Value indices
+        = e_.ins().iadd(e_.ins().vconst(types::I8X16(), bytes), e_.ins().splat(types::I8X16(), index));
+
+    const Value shuffled = e_.ins().swizzle(e_.load_vr(vs, types::I8X16()), indices);
+
+    // preserve the byte layout of the reversed guest vector when regrouping into words
+    const auto laneFlags = e_.builder.memflags_with_endianness(
+        e_.builder.memflags_new(), Endianness::CL_ENDIANNESS_LITTLE);
+    const Value words = e_.ins().bitcast(types::I32X4(), laneFlags, shuffled);
+    const Value word = e_.ins().extractlane(words, 0);
+
+    e_.store_memory(ea, e_.ins().bswap(word));
+}
+
+CLHandler(stvewx) {
+    emit_stvewx(e_, info_.mInst.field_vd(), info_.mInst.field_ra(), info_.mInst.field_rb());
+}
+
+CLHandler(stvewx128) {
+    emit_stvewx(e_, info_.mInst.field_vds128(), info_.mInst.field_ra(), info_.mInst.field_rb());
 }
